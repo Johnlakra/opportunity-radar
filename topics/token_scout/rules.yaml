@@ -1,0 +1,31 @@
+# The course's objective rules. The rule-tuner build agent may adjust thresholds,
+# but must NEVER loosen anything under `security` or `holders.max_single_wallet_pct`.
+discovery:
+  gecko_pages: 1                # trending + top-volume pools per chain (GeckoTerminal: 30 rpm)
+  recheck_minutes: 360
+  max_deep_checks_per_run: 12   # each = 1 security + 2 OHLCV + socials calls
+filters:
+  min_mcap: 50000
+  max_mcap: 1000000             # course sweet spot ~100-200K
+  min_age_hours: 100            # never fresh launches (snipers, rugs, honeypots)
+  max_age_hours: 2000
+  min_volume_24h: 2000
+  max_fdv_to_mcap: 1.2
+security:
+  min_lp_locked_pct: 90
+holders:
+  hard_min: 500
+  min: 1000
+  max_single_wallet_pct: 10     # excluding LP, locks, burn, known exchange wallets
+  warn_single_wallet_pct: 8
+socials:
+  min_telegram_members: 1000
+  min_domain_age_days: 14
+price_location:
+  max_range_position: 0.30      # bottom 30% of the recent range
+  min_drawdown_from_ath: 0.60   # well below the launch pump
+  range_window_days: 15
+regime_gate:
+  block_buyzone_in: [UP_LEG, SECOND_LEG_UP, CORRECTION_WAIT]
+exchange_wallets: []            # add known CEX wallet addresses to exclude from concentration
+avoid_name_keywords: [football, olympic, "world cup", fifa, election]

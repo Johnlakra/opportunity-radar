@@ -1,0 +1,21 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes: ["redisdata:/data"]
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on: [redis]
+    volumes: ["./data:/app/data", "./topics:/app/topics", "./config:/app/config"]
+    command: python -m app.scheduler
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on: [redis]
+    volumes: ["./data:/app/data", "./topics:/app/topics", "./config:/app/config"]
+    command: python -m app.bot
+volumes:
+  redisdata:

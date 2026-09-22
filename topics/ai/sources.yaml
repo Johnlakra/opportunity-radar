@@ -1,0 +1,14 @@
+# Verify new feeds with the source-scout build agent. Failing feeds show in health:<topic> in Redis.
+hackernews:
+  - {tags: show_hn, min_points: 5}
+  - {tags: story, min_points: 100}
+rss:
+  - {name: "OpenAI", url: "https://openai.com/news/rss.xml"}
+  - {name: "Hugging Face", url: "https://huggingface.co/blog/feed.xml"}
+  - {name: "Google DeepMind", url: "https://deepmind.google/blog/feed/basic/"}
+  - {name: "BetaList", url: "https://betalist.com/feed"}
+  - {name: "r/LocalLLaMA", url: "https://www.reddit.com/r/LocalLLaMA/new.rss"}
+google_news:
+  - {name: "AI waitlists", q: "AI \"waitlist\" OR \"early access\" launch"}
+  - {name: "Anthropic", q: "Anthropic Claude launch"}
+  - {name: "AI free credits", q: "AI API \"free credits\" developers"}

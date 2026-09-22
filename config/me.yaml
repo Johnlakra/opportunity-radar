@@ -1,0 +1,11 @@
+# Personal context: items touching anything here get a ⭐ and a priority boost. Edit freely.
+country: India
+dev_stack: [React, Next.js, React Native/Expo, FastAPI, MySQL, Redis]
+exchanges: []          # e.g. [CoinDCX, Binance]  -> security incidents / listings there matter most
+wallets: []            # e.g. [Phantom, MetaMask]
+chains: [solana, ethereum, base]
+holding_tickers: []    # e.g. [BTC, ETH, SOL]  (keep in sync with /holdings)
+interests:
+  - early access / waitlists / free credits for AI tools useful to my stack
+  - legitimate airdrops I can claim with ONE wallet
+  - exchange listings, unlocks and security incidents that affect my coins

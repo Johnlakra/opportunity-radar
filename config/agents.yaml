@@ -1,0 +1,47 @@
+# The runtime team. One job each, own schedule, failures isolated.
+# Order matters only for the staggered first run after boot (regime first).
+agents:
+  regime:                       # BTC regime from the cheat sheet; feeds scout/majors gating
+    type: regime
+    every_min: 240
+  guardian:                     # protects your journaled holdings (take-profit, community loss)
+    type: guardian
+    every_min: 30
+    take_profit_multiples: [2, 3, 5, 10]
+    drawdown_alert_pct: 30
+  news_ai:
+    type: news
+    topic: ai
+    label: "AI"
+    every_min: 45
+    score_threshold: 7
+  news_crypto:
+    type: news
+    topic: crypto_news
+    label: "Crypto"
+    every_min: 45
+    score_threshold: 7
+  news_airdrops:
+    type: news
+    topic: airdrops
+    label: "Airdrops"
+    every_min: 90
+    score_threshold: 7
+    priority_boost: 3
+  majors:                       # discounted top-200 coins, only when the regime allows buying
+    type: majors
+    every_min: 720
+    rank_max: 200
+    min_ath_drawdown_pct: 70
+    max_per_run: 3
+  token_scout:                  # multi-chain DEX tokens through the course checklist
+    type: token_scout
+    every_min: 120
+    chains: [solana, base, ethereum, bsc, arbitrum]
+    shadow_mode: true           # log verdicts only; set false after ~4 weeks if /more shows it's useful
+  curator:                      # daily digest: top items across ALL agents, max 2 per topic
+    type: curator
+    cron_hour: 9
+    total: 6
+    per_topic: 2
+    min_priority: 60

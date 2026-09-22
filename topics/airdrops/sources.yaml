@@ -1,0 +1,8 @@
+rss:
+  - {name: "airdrops.io", url: "https://airdrops.io/feed/"}
+  - {name: "Decrypt", url: "https://decrypt.co/feed"}
+  - {name: "Cointelegraph", url: "https://cointelegraph.com/rss"}
+google_news:
+  - {name: "Airdrop claims", q: "airdrop claim \"eligibility\" official"}
+  - {name: "Airdrop snapshots", q: "airdrop snapshot date announced"}
+  - {name: "Points programs", q: "\"points program\" crypto launch"}

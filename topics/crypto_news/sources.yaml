@@ -1,0 +1,13 @@
+rss:
+  - {name: "CoinDesk", url: "https://www.coindesk.com/arc/outboundfeeds/rss/"}
+  - {name: "Cointelegraph", url: "https://cointelegraph.com/rss"}
+  - {name: "Decrypt", url: "https://decrypt.co/feed"}
+  - {name: "The Block", url: "https://www.theblock.co/rss.xml"}
+  - {name: "Blockworks", url: "https://blockworks.co/feed/"}
+google_news:
+  - {name: "Binance listings", q: "\"Binance will list\""}
+  - {name: "Coinbase listings", q: "Coinbase \"roadmap\" OR \"will add\" listing"}
+  - {name: "Exchange hacks", q: "crypto exchange hack OR exploit OR drained"}
+  - {name: "Token unlocks", q: "\"token unlock\" this week"}
+  - {name: "India crypto rules", q: "India crypto tax OR TDS OR FIU OR regulation"}
+  - {name: "Delistings", q: "crypto delist OR \"suspend withdrawals\""}
