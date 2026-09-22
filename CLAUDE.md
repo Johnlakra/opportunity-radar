@@ -16,16 +16,19 @@ All agents submit to app/cream.py (the cream gate): priority ≥85 may ping now 
 holding protection, always delivered), everything else competes for the digest.
 
 ## Build agents (.claude/agents/) — cheapest capable model per job
-| Task | Agent | Model |
+| Task | Agent | Model (frontmatter alias → resolves to) |
 |---|---|---|
-| Add/repair a feed | source-scout | haiku |
-| New topic end to end | topic-creator → source-scout | haiku |
-| API field drift / broken client | api-watch | haiku |
-| Tune a noisy/quiet topic from 👍/👎 | prompt-tuner | sonnet |
-| Tune token-scout thresholds from shadow data | rule-tuner | sonnet |
-| Pre-deploy money/wallet safety audit | safety-auditor | sonnet |
-| Architecture changes / multi-file features | ECC `planner` + `architect` | opus/sonnet |
-| Code review before commit | ECC `python-reviewer` | sonnet |
+| Add/repair a feed | source-scout | `haiku` → Haiku 4.5 |
+| New topic end to end | topic-creator → source-scout | `haiku` → Haiku 4.5 |
+| API field drift / broken client | api-watch | `haiku` → Haiku 4.5 |
+| Tune a noisy/quiet topic from 👍/👎 | prompt-tuner | `sonnet` → Sonnet 5 |
+| Tune token-scout thresholds from shadow data | rule-tuner | `sonnet` → Sonnet 5 |
+| Pre-deploy money/wallet safety audit | safety-auditor | `sonnet` → Sonnet 5 |
+| Architecture changes / multi-file features | planner → architect | `opus` → Opus 5, then `sonnet` → Sonnet 5 |
+| Code review before commit | python-reviewer | `sonnet` → Sonnet 5 |
+Each agent's frontmatter carries the tier alias, not a pinned model id, so agents follow the latest
+model in their tier. Haiku tier = mechanical edits against a known schema; sonnet tier = judgment over
+feedback, thresholds, money safety and review; opus tier = multi-file planning.
 Run independent agents in parallel (e.g. source-scout for two topics); run safety-auditor last.
 
 ## Rules
