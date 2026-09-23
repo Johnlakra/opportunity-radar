@@ -79,11 +79,14 @@ class Coin(SQLModel, table=True):
 class Holding(SQLModel, table=True):
     """Your journal (the course's spreadsheet, in the DB).
     kind="cg"  -> CoinGecko id (BTC, ETH, SOL, any listed coin); entry = price
-    kind="dex" -> "<chain>:<address>" DEX token; entry = market cap"""
+    kind="dex" -> "<chain>:<address>" DEX token; entry = market cap
+    entry_price is what one coin cost at the time - kept alongside, because market cap is what
+    the course tracks but price is what you actually paid."""
     id: Optional[int] = Field(default=None, primary_key=True)
     kind: str
     ref: str = Field(index=True)
     symbol: str = ""
     entry_value: float
+    entry_price: Optional[float] = None
     usd: float
     added_at: datetime = Field(default_factory=now)

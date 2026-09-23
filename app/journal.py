@@ -26,9 +26,12 @@ def watchlist() -> list[Coin]:
                            .order_by(Coin.score.desc())).all())
 
 
-def add_dex_holding(key: str, symbol: str, entry_mcap: float, usd: float) -> Holding:
-    """Journal a DEX token at its CURRENT market cap - the course tracks market cap, not price."""
-    holding = Holding(kind="dex", ref=key, symbol=symbol or key, entry_value=entry_mcap or 0, usd=usd)
+def add_dex_holding(key: str, symbol: str, entry_mcap: float, usd: float,
+                    entry_price: float | None = None) -> Holding:
+    """Journal a DEX token at its CURRENT market cap - the course tracks market cap, not price -
+    and keep the price you paid alongside it."""
+    holding = Holding(kind="dex", ref=key, symbol=symbol or key, entry_value=entry_mcap or 0,
+                      entry_price=entry_price, usd=usd)
     with session() as s:
         s.add(holding)
         s.commit()
@@ -56,3 +59,21 @@ def holdings_symbols() -> list[str]:
         if symbol and symbol not in seen:
             seen.append(symbol)
     return seen
+
+
+def holdings_in_order() -> list[Holding]:
+    """Oldest first. Position in this list is the #number you see; it always starts at 1,
+    so removing one never leaves a gap."""
+    with session() as s:
+        return list(s.exec(select(Holding).order_by(Holding.added_at, Holding.id)).all())
+
+
+def get_holding(holding_id: int) -> Holding | None:
+    with session() as s:
+        return s.get(Holding, holding_id)
+
+
+def holding_at(position: int) -> Holding | None:
+    """The holding shown as #position, or None if there is no such line."""
+    rows = holdings_in_order()
+    return rows[position - 1] if 1 <= position <= len(rows) else None

@@ -62,6 +62,8 @@ Addresses differ per chain (EVM hex, base58, TON base64url, Move types) - use `c
 - Never encode "guaranteed profit"/"can't get rugged" claims or multi-wallet (Sybil) farming.
 - Settings live in Redis (app/prefs.py). NEVER rewrite config/me.yaml or config/agents.yaml at
   runtime, except the topic wizard appending one validated agent entry.
-- Any new Item/Alert column goes in app/migrate.py too, or old databases break.
+- Any new Item/Alert/Holding column goes in app/migrate.py too, or old databases break.
+- The journal's visible #number is the POSITION (app/journal.holdings_in_order), never the row id -
+  the id only travels inside callback_data. Money in a CSV uses text.plain_number, never %g.
 - Tests: `pytest -q` must pass before commit. The local interpreter may lack telegram/sqlmodel,
   so keep logic testable in pure modules and guard database tests with `pytest.importorskip`.

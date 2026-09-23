@@ -9,19 +9,22 @@ def old_database():
     with db.begin() as conn:
         conn.exec_driver_sql("CREATE TABLE item (id INTEGER PRIMARY KEY, title VARCHAR)")
         conn.exec_driver_sql("CREATE TABLE feedback (id INTEGER PRIMARY KEY, vote VARCHAR)")
+        conn.exec_driver_sql("CREATE TABLE holding (id INTEGER PRIMARY KEY, usd FLOAT)")
     return db
 
 
 def test_missing_columns_are_added_once():
     db = old_database()
-    assert set(run(db)["item"]) == set(MIGRATIONS["item"])
-    assert {c["name"] for c in inspect(db).get_columns("item")} >= set(MIGRATIONS["item"])
+    added = run(db)
+    for table, columns in MIGRATIONS.items():
+        assert set(added[table]) == set(columns), table
+        assert {c["name"] for c in inspect(db).get_columns(table)} >= set(columns), table
 
 
 def test_running_it_again_changes_nothing():
     db = old_database()
     run(db)
-    assert run(db) == {"item": [], "feedback": []}
+    assert run(db) == {table: [] for table in MIGRATIONS}
 
 
 def test_existing_rows_survive_the_back_fill():

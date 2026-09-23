@@ -23,6 +23,9 @@ MIGRATIONS: dict[str, dict[str, str]] = {
     "feedback": {
         "source": "VARCHAR",
     },
+    "holding": {
+        "entry_price": "REAL",
+    },
 }
 
 

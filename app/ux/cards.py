@@ -1,7 +1,7 @@
 """Plain-English cards. Pure formatting - no network, no Redis, so it is easy to test.
 
 Every card ends with a reminder that this is research, not advice."""
-from ..text import age, esc, money, price
+from ..text import age, esc, money, plain_number, price
 
 NOT_ADVICE = "<i>Research only, never a promise. Most small coins go to zero. Not financial advice.</i>"
 
@@ -182,28 +182,61 @@ def candidates_card(query: str, found: list) -> str:
             "<i>Price · MC is the whole coin&#39;s value · age · ✓ means it has socials.</i>")
 
 
+FLAT_BELOW_USD = 0.5          # under half a dollar, "+$0" reads like a bug - say flat instead
+CENTS_BELOW_USD = 100
+
+
+def profit_text(amount: float) -> str:
+    if abs(amount) < FLAT_BELOW_USD:
+        return "flat"
+    sign = "+" if amount > 0 else "-"
+    size = abs(amount)
+    return f"{sign}${size:,.2f}" if size < CENTS_BELOW_USD else f"{sign}${size:,.0f}"
+
+
+def enrich(row: dict) -> dict:
+    """Everything derived from one journal line, worked out once for the card and the export.
+
+    Market cap drives the multiple (that is what the course tracks); the entry price is what you
+    actually paid. Rows saved before the journal stored an entry price get one worked back from
+    the market-cap ratio, which holds while the supply does, and is marked as an estimate."""
+    entry, value = row.get("entry"), row.get("value")
+    out = dict(row)
+    out["multiple"] = (value / entry) if (value and entry) else None
+    out["value_now"] = (row["usd"] * out["multiple"]) if out["multiple"] else None
+    out["profit"] = (out["value_now"] - row["usd"]) if out["value_now"] is not None else None
+    out["profit_pct"] = ((out["multiple"] - 1) * 100) if out["multiple"] else None
+
+    entry_price, estimated = row.get("entry_price"), False
+    if not entry_price and row.get("unit") == "price":
+        entry_price = entry                                   # listed coins: entry IS the price
+    elif not entry_price and row.get("price") and value and entry:
+        entry_price, estimated = row["price"] * entry / value, True
+    out["entry_price"] = entry_price
+    out["entry_price_estimated"] = estimated
+    return out
+
+
 def portfolio_card(rows: list[dict]) -> str:
-    """rows: {symbol, usd, entry, value, price, id, unit}. Live x-multiple and profit in dollars."""
+    """One line per holding: what it costs now, what you paid, and where you stand."""
     if not rows:
         return ("<b>📒 Journal</b>\nNothing journalled yet.\n"
                 "Tap ➕ Add, type a coin name, and I will store the rest for you.")
     lines, invested, worth = ["<b>📒 Journal</b>"], 0.0, 0.0
-    for row in rows:
+    for position, raw in enumerate(rows, start=1):
+        row = enrich(raw)
         invested += row["usd"]
-        now_price = f" · {price(row['price'])}" if row.get("price") else ""
-        if row.get("value") and row.get("entry"):
-            mult = row["value"] / row["entry"]
-            now = row["usd"] * mult
-            worth += now
-            pnl = now - row["usd"]
-            lines.append(f"#{row['id']} <b>{esc(row['symbol'])}</b>{now_price} · ${row['usd']:,.0f} in · "
-                         f"{mult:.2f}x · {'+' if pnl >= 0 else '-'}${abs(pnl):,.0f}")
-        else:
-            worth += row["usd"]
-            lines.append(f"#{row['id']} <b>{esc(row['symbol'])}</b>{now_price} · ${row['usd']:,.0f} in · "
-                         "live value unavailable")
+        worth += row["value_now"] if row["value_now"] is not None else row["usd"]
+        head = f"#{raw.get('n', position)} <b>{esc(row['symbol'])}</b>"
+        if row["multiple"] is None:
+            lines.append(f"{head} · ${row['usd']:,.0f} in · live value unavailable")
+            continue
+        entry_price = row["entry_price"]
+        moved = (f"{price(entry_price)} → {price(row['price'])}"
+                 if entry_price and row.get("price") else price(row.get("price")))
+        lines.append(f"{head} · {moved} · ${row['usd']:,.0f} in · "
+                     f"{row['multiple']:.2f}x · {profit_text(row['profit'])}")
     total = worth - invested
-    lines.append(f"\n<b>Total</b> ${invested:,.0f} in → ${worth:,.0f} "
-                 f"({'+' if total >= 0 else '-'}${abs(total):,.0f})")
+    lines.append(f"\n<b>Total</b> ${invested:,.0f} in → ${worth:,.0f} ({profit_text(total)})")
     lines.append(NOT_ADVICE)
     return "\n".join(lines)

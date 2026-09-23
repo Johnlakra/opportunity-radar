@@ -16,7 +16,7 @@ from .crypto.chains import CHAINS, LOOKUP_ONLY, SCOUT_CHAINS, coin_key, has_secu
 from .crypto.http import client
 from .db import init_db, session
 from .feedback import record_item_vote
-from .journal import set_status
+from .journal import holding_at, holdings_in_order, set_status
 from .models import Alert, Holding
 from .notifier import esc
 from .text import price as fmt_price
@@ -117,7 +117,7 @@ async def cmd_hold(update, ctx):
                 return await reply(update, "Unknown CoinGecko id (see the coin's CoinGecko URL).")
             entry_price = m[0]["current_price"]
             h = Holding(kind="cg", ref=a[1], symbol=m[0]["symbol"].upper(),
-                        entry_value=entry_price, usd=float(a[2]))
+                        entry_value=entry_price, entry_price=entry_price, usd=float(a[2]))
         elif len(a) == 3 and a[0] in CHAINS and is_address(a[1]):
             chain, addr = a[0], norm(a[0], a[1])
             async with client() as c:
@@ -127,7 +127,7 @@ async def cmd_hold(update, ctx):
             b = dx.basics(pair)
             entry_price = b["price"]
             h = Holding(kind="dex", ref=coin_key(chain, addr), symbol=b["symbol"],
-                        entry_value=b["mcap"] or 0, usd=float(a[2]))
+                        entry_value=b["mcap"] or 0, entry_price=entry_price, usd=float(a[2]))
         else:
             return await reply(update, "Usage: /hold cg &lt;id&gt; &lt;usd&gt;  or  /hold &lt;chain&gt; &lt;address&gt; &lt;usd&gt;")
     except ValueError:
@@ -146,25 +146,31 @@ async def cmd_hold(update, ctx):
 async def cmd_holdings(update, ctx):
     if not mine(update):
         return
-    with session() as s:
-        rows = s.exec(select(Holding)).all()
+    rows = holdings_in_order()
     if not rows:
-        return await reply(update, "No holdings journaled. Use /hold.")
-    lines = ["<b>📒 Journal</b>"] + [f"#{h.id} {esc(h.symbol)} · ${h.usd:,.0f} · entry {h.entry_value:,.4g} · "
-                                     f"{h.added_at:%Y-%m-%d}" for h in rows]
+        return await reply(update, "No holdings journaled. Use /hold, or 📒 Journal in /menu.")
+    lines = ["<b>📒 Journal</b>"]
+    for position, h in enumerate(rows, start=1):
+        entry = f"{fmt_price(h.entry_price)} · " if h.entry_price else ""
+        unit = "price" if h.kind == "cg" else "market cap"
+        lines.append(f"#{position} {esc(h.symbol)} · ${h.usd:,.0f} in · {entry}"
+                     f"{unit} {h.entry_value:,.0f} · {h.added_at:%Y-%m-%d}")
+    lines.append("<i>Live values and profit: 📒 Journal in /menu.</i>")
     await reply(update, "\n".join(lines))
 
 
 async def cmd_sell(update, ctx):
+    """/sell <n> - n is the number shown in the journal, which always counts from 1."""
     if not mine(update) or not ctx.args:
         return
-    with session() as s:
-        h = s.get(Holding, int(ctx.args[0])) if ctx.args[0].isdigit() else None
-        if not h:
-            return await reply(update, "Unknown holding id (see /holdings).")
-        s.delete(h)
-        s.commit()
-    await reply(update, "Removed from journal.")
+    if not ctx.args[0].isdigit():
+        return await reply(update, "Usage: /sell &lt;number from the journal&gt;")
+    holding = holding_at(int(ctx.args[0]))
+    if not holding:
+        return await reply(update, "There is no holding with that number (see /journal).")
+    await reply(update, f"Remove <b>{esc(holding.symbol)}</b> (${holding.usd:,.0f} in) from the journal?",
+                cream.buttons([("Yes, remove", None, f"sl:{holding.id}"),
+                               ("Cancel", None, "m:journal")]))
 
 
 async def cmd_mute(update, ctx):

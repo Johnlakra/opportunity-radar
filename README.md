@@ -77,11 +77,39 @@ works the same way — the address is resolved and stored for you, and never sho
 | 📰 **Today's Best** | The best of everything right now, filterable by topic, without consuming the daily summary |
 | 🧭 **Daily Picks** | Sends today's summary now |
 | ⭐ **Watchlist** | Coins you follow; the scout re-checks them every run |
-| 📒 **Journal** | Live price, multiple and $ profit per coin, add by tapping, CSV export |
+| 📒 **Journal** | What you paid → what it costs now, multiple, $ profit, add by tapping, CSV export |
 | 🗂 **Saved & Deadlines** | What you starred, and anything closing soon, soonest first |
 | 🎛 **Alerts & Topics** | Topics on/off, how picky to be, pings per day, summary time, quiet hours, your setup, what got filtered |
 | 🩺 **Bot Health** | 🟢/🟡/🔴 per agent, which feeds are failing, and a Run now button |
 | ❓ **Help** | Plain-English glossary for every word on a card |
+
+### The journal
+
+```
+📒 Journal
+#1 UTYA  · $0.02973 → $0.02973 · $210 in · 1.00x · flat
+#2 BRETT · $0.005883 → $0.005881 · $458 in · 1.00x · flat
+#3 TROLL · $0.05574 → $0.05854 · $486 in · 1.05x · +$24.29
+
+Total $1,154 in → $1,178 (+$24.17)
+```
+
+The number is the position in the list, so removing one never leaves a gap — the database id
+travels inside the buttons instead, where it cannot be mistyped. Removing always asks first and
+names the coin. `/sell <n>` takes the number you can see.
+
+**⬇️ Export CSV** gives you a spreadsheet, not a data dump: plain decimals throughout (a market cap
+is `29732700`, not `2.97327E+07`; a memecoin price is `0.00000000123`, not `1.23E-09`), one line per
+holding, and a TOTAL line at the end.
+
+| Column | |
+|---|---|
+| `#` · `journal_id` · `symbol` · `chain` | which line, and which coin |
+| `tracked_on` | `market cap` for DEX tokens, `price` for listed coins — the course tracks market cap |
+| `date_added` · `days_held` · `amount_invested_usd` | when and how much |
+| `entry_price_usd` · `entry_price_source` | what one coin cost you. `recorded` when the journal saved it; `estimated from market cap` for rows added before it did, worked back from the market-cap ratio |
+| `entry_market_cap_usd` · `current_price_usd` · `current_market_cap_usd` | then and now |
+| `multiple_x` · `value_now_usd` · `profit_usd` · `profit_pct` · `link` | where you stand |
 
 ### News cards you can act on
 
@@ -131,7 +159,7 @@ your comments and formatting stay exactly as you wrote them.
 **Every original command still works:**
 `/digest` `/regime` `/check <chain> <address>` `/watch <chain> <address>`
 `/hold cg <coingecko-id> <usd>` (e.g. `/hold cg solana 100`) · `/hold <chain> <address> <usd>`
-`/holdings` `/sell <id>` `/mute <topic>` `/unmute <topic>` `/more` (what got filtered) `/agents` `/run <agent>`
+`/holdings` `/sell <n>` (the number shown in the journal) `/mute <topic>` `/unmute <topic>` `/more` (what got filtered) `/agents` `/run <agent>`
 Buttons: 👍/👎 teach the scorer · 👀 Watch / 🗑 Ignore on tokens.
 
 ## Chains

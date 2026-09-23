@@ -3,12 +3,15 @@ original handler (👍/👎 votes, w:/x: watch and ignore) keeps working untouch
 import logging
 from io import BytesIO
 
-from ..journal import remove_holding, set_status
+from telegram import InlineKeyboardButton
+
+from ..journal import get_holding, remove_holding, set_status
+from ..text import esc
 from ..redis_client import r
 from . import flows, glossary, menu, news_router, portfolio, tokens
 
 log = logging.getLogger(__name__)
-NEW_ACTIONS = {"m", "g", "chk", "wl", "wx", "jw", "sl", "mt"}
+NEW_ACTIONS = {"m", "g", "chk", "wl", "wx", "jw", "sl", "slq", "mt"}
 EXPIRED = "That button is older than a week — please search for the coin again."
 
 
@@ -44,9 +47,23 @@ async def route(update, ctx) -> bool:
         await query.answer()
         await flows.say(update, text or "No entry for that word yet.")
         return True
+    if action == "slq":                     # removing is not undoable, so name it first
+        holding = get_holding(int(arg)) if arg.isdigit() else None
+        await query.answer()
+        if not holding:
+            await flows.say(update, "That holding is already gone.")
+        else:
+            await flows.say(update, f"Remove <b>{esc(holding.symbol)}</b> (${holding.usd:,.0f} in) "
+                                    "from the journal?",
+                            flows.keyboard([[InlineKeyboardButton("Yes, remove",
+                                                                  callback_data=f"sl:{holding.id}"),
+                                             InlineKeyboardButton("Cancel",
+                                                                  callback_data="m:journal")]]))
+        return True
     if action == "sl":
         gone = remove_holding(int(arg)) if arg.isdigit() else False
         await query.answer("Removed from the journal" if gone else "Already gone")
+        await flows.cmd_journal(update, ctx)          # renumbered straight away
         return True
     if action == "mt":
         if r.sismember("muted", arg):

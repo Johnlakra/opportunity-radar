@@ -101,8 +101,8 @@ async def cmd_journal(update, ctx):
     await say(update, cards.portfolio_card(rows),
               keyboard([[InlineKeyboardButton("➕ Add a coin", callback_data="m:find"),
                          InlineKeyboardButton("⬇️ Export CSV", callback_data="m:csv")]]
-                       + [[InlineKeyboardButton(f"🗑 Remove #{row['id']} {row['symbol']}"[:60],
-                                                callback_data=f"sl:{row['id']}")] for row in rows[:8]]))
+                       + [[InlineKeyboardButton(f"🗑 Remove #{row['n']} {row['symbol']}"[:60],
+                                                callback_data=f"slq:{row['id']}")] for row in rows[:8]]))
 
 
 async def cmd_watchlist(update, ctx):
@@ -218,7 +218,8 @@ async def save_amount(update, text: str):
         clear_state(chat_id)
         return await say(update, "That token has no tradeable pair right now, so I can't record an entry.")
     basics = dx.basics(pair)
-    holding = add_dex_holding(state["key"], basics["symbol"], basics["mcap"] or 0, usd)
+    holding = add_dex_holding(state["key"], basics["symbol"], basics["mcap"] or 0, usd,
+                              basics["price"])
     clear_state(chat_id)
     entry_price = f" (one coin cost {price(basics['price'])})" if basics.get("price") else ""
     await say(update, f"📒 Saved #{holding.id} <b>{esc(holding.symbol)}</b> — ${usd:,.0f} in at a market cap of "

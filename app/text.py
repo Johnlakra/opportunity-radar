@@ -54,3 +54,17 @@ def as_data(text, limit: int = 500) -> str:
     Strip control characters and cap the length before it can reach a prompt."""
     cleaned = "".join(ch for ch in str(text or "") if ch == "\n" or ch >= " ")
     return cleaned[:limit]
+
+
+def plain_number(value, decimals: int = 12) -> str:
+    """Decimal notation for a spreadsheet cell, never 2.97327E+07 or 1.23e-09.
+    Trailing zeros are trimmed, so 29732700.0 -> "29732700" and 1.23e-9 -> "0.00000000123"."""
+    if value in (None, ""):
+        return ""
+    try:
+        text = f"{float(value):.{decimals}f}"
+    except (TypeError, ValueError):
+        return ""
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
