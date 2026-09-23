@@ -4,25 +4,33 @@ import re
 
 from sqlmodel import select
 from telegram import Update
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes,
+                          MessageHandler, filters)
 
 from . import cream
 from .agents.curator import CuratorAgent
 from .agents.token_scout import TokenScoutAgent
 from .config import settings
 from .crypto import coingecko, dexscreener as dx, regime
-from .crypto.chains import CHAINS, coin_key, norm
+from .crypto.chains import CHAINS, LOOKUP_ONLY, SCOUT_CHAINS, coin_key, has_security, is_address, norm
 from .crypto.http import client
 from .db import init_db, session
 from .feedback import record_item_vote
-from .models import Alert, Coin, Holding
+from .journal import set_status
+from .models import Alert, Holding
 from .notifier import esc
+from .text import price as fmt_price
 from .orchestrator import build_agents, run_agent
 from .redis_client import r
+from .ux import flows, menu, news, router, settings as settings_ux  # noqa: F401 (menu registration)
 
 logging.basicConfig(level=logging.INFO)
-ADDR = re.compile(r"^(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})$")
 HELP = """<b>Opportunity Radar</b>
+<b>Easiest way:</b> /menu, or just type a coin name — I find the address for you.
+/mood – is this a good time to buy? · /find &lt;name&gt; – check any coin
+/journal – your coins, live profit · /watchlist – coins you follow
+
+<b>Everything else still works:</b>
 /digest – send today's cream now
 /regime – BTC regime (cheat sheet)
 /check &lt;chain&gt; &lt;address&gt; – run the course checklist on a token
@@ -31,7 +39,8 @@ HELP = """<b>Opportunity Radar</b>
 /hold &lt;chain&gt; &lt;address&gt; &lt;usd&gt; – journal a DEX token
 /holdings · /sell &lt;id&gt;
 /mute &lt;topic&gt; · /unmute &lt;topic&gt; · /more · /agents
-Chains: """ + ", ".join(CHAINS)
+Chains I can check fully: """ + ", ".join(SCOUT_CHAINS) + f"""
+Chains I can look up (price, journal, alerts - no safety report yet): {", ".join(LOOKUP_ONLY)}"""
 
 
 def mine(update: Update) -> bool:
@@ -50,6 +59,12 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await reply(update, HELP)
 
 
+async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """The 7-button menu - the front door for everything below."""
+    if mine(update):
+        await flows.cmd_menu(update, ctx)
+
+
 async def cmd_regime(update, ctx):
     if mine(update):
         await reply(update, regime.format_regime(await regime.compute()))
@@ -61,7 +76,7 @@ async def cmd_digest(update, ctx):
 
 
 def _chain_addr(args):
-    if len(args) < 2 or args[0] not in CHAINS or not ADDR.match(args[1]):
+    if len(args) < 2 or args[0] not in CHAINS or not is_address(args[1]):
         return None, None
     return args[0], norm(args[0], args[1])
 
@@ -72,6 +87,8 @@ async def cmd_check(update, ctx):
     chain, addr = _chain_addr(ctx.args)
     if not chain:
         return await reply(update, "Usage: /check &lt;chain&gt; &lt;address&gt;")
+    if not has_security(chain):                  # TON, Sui, Aptos...: show the numbers, not a false verdict
+        return await flows.show_details(update, coin_key(chain, addr))
     await reply(update, "Checking… (security, holders, range, socials — ~30s)")
     text, btns = await TokenScoutAgent("token_scout", {}).check_one(chain, addr)
     await reply(update, text, btns)
@@ -87,34 +104,28 @@ async def cmd_watch(update, ctx):
     await reply(update, "👀 Added to watchlist; the scout re-checks it every run.")
 
 
-def set_status(key: str, status: str):
-    chain, addr = key.split(":", 1)
-    with session() as s:
-        coin = s.get(Coin, key) or Coin(key=key, chain=chain, address=addr)
-        coin.user_status = status
-        s.add(coin)
-        s.commit()
-
-
 async def cmd_hold(update, ctx):
     if not mine(update):
         return
     a = ctx.args
+    entry_price = None
     try:
         if len(a) == 3 and a[0] == "cg":
             async with client() as c:
                 m = await coingecko.markets(c, ids=[a[1]])
             if not m:
                 return await reply(update, "Unknown CoinGecko id (see the coin's CoinGecko URL).")
+            entry_price = m[0]["current_price"]
             h = Holding(kind="cg", ref=a[1], symbol=m[0]["symbol"].upper(),
-                        entry_value=m[0]["current_price"], usd=float(a[2]))
-        elif len(a) == 3 and a[0] in CHAINS and ADDR.match(a[1]):
+                        entry_value=entry_price, usd=float(a[2]))
+        elif len(a) == 3 and a[0] in CHAINS and is_address(a[1]):
             chain, addr = a[0], norm(a[0], a[1])
             async with client() as c:
                 pair = dx.best_pairs(chain, await dx.pairs_for(c, chain, [addr])).get(addr)
             if not pair:
                 return await reply(update, "No pair found for that token.")
             b = dx.basics(pair)
+            entry_price = b["price"]
             h = Holding(kind="dex", ref=coin_key(chain, addr), symbol=b["symbol"],
                         entry_value=b["mcap"] or 0, usd=float(a[2]))
         else:
@@ -126,7 +137,9 @@ async def cmd_hold(update, ctx):
         s.commit()
         s.refresh(h)
     unit = "price" if h.kind == "cg" else "market cap"
-    await reply(update, f"📝 Journaled #{h.id} {esc(h.symbol)}: ${h.usd:,.0f} at {unit} {h.entry_value:,.4g}. "
+    at_price = f" (one coin cost {fmt_price(entry_price)})" if h.kind != "cg" and entry_price else ""
+    await reply(update, f"📝 Journaled #{h.id} {esc(h.symbol)}: ${h.usd:,.0f} at {unit} "
+                        f"{h.entry_value:,.4g}{at_price}. "
                         "The guardian now watches take-profit levels and community health.")
 
 
@@ -203,10 +216,20 @@ async def cmd_run(update, ctx):
     await reply(update, f"{esc(ctx.args[0])}: {esc(status)}")
 
 
+def owner_only(fn):
+    """Wrap a flow handler so it only ever answers YOUR chat id."""
+    async def wrapped(update, ctx):
+        if mine(update):
+            await fn(update, ctx)
+    return wrapped
+
+
 async def on_button(update: Update, ctx):
     q = update.callback_query
     if not mine(update):
         return await q.answer()
+    if await router.route(update, ctx):
+        return
     data = q.data or ""
     if data.startswith("v:"):
         _, vote, item_id = data.split(":", 2)
@@ -225,13 +248,21 @@ async def on_button(update: Update, ctx):
 
 def main():
     init_db()
-    app = Application.builder().token(settings.telegram_bot_token).build()
-    for name, fn in [("start", cmd_help), ("help", cmd_help), ("regime", cmd_regime), ("digest", cmd_digest),
+    app = Application.builder().token(settings.telegram_bot_token).post_init(menu.setup).build()
+    for name, fn in [("start", cmd_menu), ("help", cmd_help), ("regime", cmd_regime), ("digest", cmd_digest),
                      ("check", cmd_check), ("watch", cmd_watch), ("hold", cmd_hold), ("holdings", cmd_holdings),
                      ("sell", cmd_sell), ("mute", cmd_mute), ("unmute", cmd_unmute), ("more", cmd_more),
-                     ("agents", cmd_agents), ("run", cmd_run)]:
+                     ("agents", cmd_agents), ("run", cmd_run),
+                     ("menu", cmd_menu), ("mood", owner_only(flows.cmd_mood)),
+                     ("find", owner_only(flows.cmd_find)), ("journal", owner_only(flows.cmd_journal)),
+                     ("watchlist", owner_only(flows.cmd_watchlist)),
+                     ("settings", owner_only(settings_ux.cmd_settings)),
+                     ("glossary", owner_only(flows.cmd_glossary)),
+                     ("today", owner_only(news.cmd_today)), ("saved", owner_only(news.cmd_saved)),
+                     ("health", owner_only(news.cmd_health))]:
         app.add_handler(CommandHandler(name, fn))
     app.add_handler(CallbackQueryHandler(on_button))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, owner_only(flows.on_text)))
     app.run_polling()
 
 

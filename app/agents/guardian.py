@@ -12,6 +12,7 @@ from ..crypto.http import client
 from ..db import session
 from ..models import Holding
 from ..notifier import esc
+from ..text import price as fmt_price
 from ..redis_client import r
 
 
@@ -55,14 +56,17 @@ class GuardianAgent:
                         r.set(f"guard:tg:{h.id}", tg)
                     if not (b["websites"] or b["telegram"] or b["twitter"]):
                         health = {"dead": True, "why": "all socials removed"}
-                    await self.check(h, b["mcap"], health, b["pair_url"])
+                    await self.check(h, b["mcap"], health, b["pair_url"], b["price"])
 
-    async def check(self, h: Holding, value, health, url=None):
+    async def check(self, h: Holding, value, health, url=None, price=None):
         name = esc(h.symbol or h.ref)
+        # Listed coins are tracked on price, DEX tokens on market cap - either way, show the price.
+        now = price if price is not None else (value if h.kind == "cg" else None)
+        at = f" · now {fmt_price(now)}" if now else ""
         btns = cream.buttons([("📊 Chart", url, None)]) if url else "[]"
         if health and health["dead"]:
             await cream.submit(f"dead:{h.id}", "guardian", 96,
-                               f"<b>🚨 {name}: community signal lost</b> — {esc(health['why'])}.\n"
+                               f"<b>🚨 {name}: community signal lost</b>{at} — {esc(health['why'])}.\n"
                                "Course rule: when the team/community leaves, exit and move on. Your call.", btns)
         if not value or not h.entry_value:
             return
@@ -71,13 +75,14 @@ class GuardianAgent:
             if mult >= lvl and not r.sismember(f"guard:tp:{h.id}", lvl):
                 r.sadd(f"guard:tp:{h.id}", lvl)
                 await cream.submit(f"tp:{h.id}:{lvl}", "guardian", 96,
-                                   f"<b>📈 {name} is {mult:.1f}x from your entry</b> (${h.usd:,.0f} → ~${h.usd * mult:,.0f})\n"
+                                   f"<b>📈 {name} is {mult:.1f}x from your entry</b>{at} "
+                                   f"(${h.usd:,.0f} → ~${h.usd * mult:,.0f})\n"
                                    "Course rule: take profits in parts (not all at once if you're a large holder); "
                                    "recover your initial stake first.", btns)
         if mult <= 1 - self.dd_alert:
             week = datetime.now(timezone.utc).strftime("%G%V")
             state = "community looks intact" if not (health and health["dead"]) else "community signals are gone"
             await cream.submit(f"dd:{h.id}:{week}", "guardian", 72,
-                               f"<b>📉 {name} is {1 - mult:.0%} below entry</b> — {state}.\n"
+                               f"<b>📉 {name} is {1 - mult:.0%} below entry</b>{at} — {state}.\n"
                                "Course: only consider adding if the community is intact and within your plan; "
                                "never more than you can afford to lose.", btns)

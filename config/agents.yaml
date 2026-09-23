@@ -9,6 +9,10 @@ agents:
     every_min: 30
     take_profit_multiples: [2, 3, 5, 10]
     drawdown_alert_pct: 30
+  reminders:                    # sends the ⏰ reminders you set from the buttons
+    type: reminders
+    every_min: 10
+    max_per_run: 10
   news_ai:
     type: news
     topic: ai
@@ -37,6 +41,8 @@ agents:
   token_scout:                  # multi-chain DEX tokens through the course checklist
     type: token_scout
     every_min: 120
+    # Only chains with a free safety report can be crawled (see SCOUT_CHAINS in
+    # app/crypto/chains.py). Each extra chain costs ~2 GeckoTerminal calls per run.
     chains: [solana, base, ethereum, bsc, arbitrum]
     shadow_mode: true           # log verdicts only; set false after ~4 weeks if /more shows it's useful
   curator:                      # daily digest: top items across ALL agents, max 2 per topic

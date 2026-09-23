@@ -1,13 +1,11 @@
-import html
 import logging
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
+from .text import esc                      # re-exported: callers still do `from .notifier import esc`
 
 log = logging.getLogger(__name__)
 
-
-def esc(s) -> str:
-    return html.escape(str(s)) if s not in (None, "") else ""
+__all__ = ["esc", "btn", "send"]
 
 
 def btn(text, url=None, data=None):

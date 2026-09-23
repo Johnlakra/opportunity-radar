@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from sqlmodel import select
 from sqlalchemy.exc import IntegrityError
 
+from . import gate, prefs
 from .config import settings
 from .db import session
 from .models import Alert
@@ -19,7 +20,8 @@ from .notifier import btn, send
 from .redis_client import r
 
 log = logging.getLogger(__name__)
-URGENT_MIN = 85
+URGENT_MIN = gate.URGENT_MIN                 # re-exported: existing callers import it from here
+ALWAYS_DELIVER = gate.ALWAYS_DELIVER
 
 
 def _urgent_key():
@@ -27,13 +29,17 @@ def _urgent_key():
 
 
 def _take_urgent_slot(priority: int) -> bool:
-    if priority >= 95:          # protecting money you already hold: always allowed
+    if priority >= ALWAYS_DELIVER:
         return True
     key = _urgent_key()
     used = r.incr(key)
     if used == 1:
         r.expire(key, 2 * 86400)
-    return used <= settings.urgent_daily_cap
+    return used <= prefs.urgent_cap(settings.urgent_daily_cap)
+
+
+def _now_hour() -> int:
+    return datetime.now(ZoneInfo(settings.timezone)).hour
 
 
 def _rows(buttons_json: str):
@@ -48,7 +54,8 @@ def buttons(*rows):
     return json.dumps([[{"t": t, "u": u, "d": d} for (t, u, d) in row] for row in rows])
 
 
-async def submit(key: str, topic: str, priority: int, text: str, buttons_json: str = "[]"):
+async def submit(key: str, topic: str, priority: int, text: str, buttons_json: str = "[]",
+                 category: str | None = None):
     priority = max(0, min(100, int(priority)))
     with session() as s:
         alert = Alert(key=key, topic=topic, priority=priority, text=text, buttons_json=buttons_json)
@@ -59,10 +66,12 @@ async def submit(key: str, topic: str, priority: int, text: str, buttons_json: s
             s.rollback()
             return
         s.refresh(alert)
-    if priority < 95 and r.sismember("muted", topic):   # holding-protection alerts ignore mute
+    verdict = gate.decide(priority, prefs.is_topic_muted(topic), prefs.is_category_muted(category or ""),
+                     prefs.is_quiet_now(_now_hour()))
+    if verdict == "dropped":
         _mark(alert.id, "dropped")
         return
-    if priority >= URGENT_MIN and _take_urgent_slot(priority):
+    if verdict == "urgent" and _take_urgent_slot(priority):
         await send(text, _rows(buttons_json))
         _mark(alert.id, "urgent")
 

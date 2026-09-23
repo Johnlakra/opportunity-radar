@@ -12,10 +12,12 @@ class Snapshot:
     symbol: str = ""
     name: str = ""
     pair_url: str = ""
+    price: float | None = None
     mcap: float | None = None
     fdv: float | None = None
     liquidity: float | None = None
     vol24: float | None = None
+    chg24: float | None = None
     age_hours: float | None = None
     range_pos: float | None = None
     drawdown: float | None = None

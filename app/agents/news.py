@@ -17,9 +17,10 @@ from ..dedupe import is_new
 from ..feedback import build_fewshot
 from ..llm import research, score_batch
 from ..models import Item
-from ..notifier import esc
 from ..redis_client import r
-from .. import cream, safety
+from ..text import as_data
+from ..ux import news_cards
+from .. import cream, prefs, safety
 from ..me import me_text
 
 log = logging.getLogger(__name__)
@@ -52,10 +53,15 @@ class NewsAgent:
         self.name = name
         self.dir = TOPICS_DIR / name
         self.label = cfg.get("label", name)
-        self.threshold = int(cfg.get("score_threshold", 7))
+        self.base_threshold = int(cfg.get("score_threshold", 7))
         self.batch = int(cfg.get("batch_size", 15))
         self.max_research = int(cfg.get("max_research_per_run", 5))
         self.weight = int(cfg.get("priority_boost", 0))   # topic-level bias, e.g. airdrops +5
+
+    @property
+    def threshold(self) -> int:
+        """How picky to be. The ⚙️ setting wins over agents.yaml when you have set one."""
+        return prefs.threshold_for(self.name, self.base_threshold)
 
     # ---- files -------------------------------------------------------------
     def profile(self) -> str:
@@ -71,16 +77,25 @@ class NewsAgent:
     # ---- stages ------------------------------------------------------------
     async def collect(self) -> list[dict]:
         src = self.sources()
+        off = prefs.sources_off(self.name)
         async with httpx.AsyncClient() as c:
             tasks, names = [], []
             for s in src.get("rss", []):
+                if s["name"] in off:
+                    continue
                 tasks.append(fetch_rss(c, s["url"], s["name"])); names.append(s["name"])
             for s in src.get("google_news", []):
-                tasks.append(fetch_rss(c, google_news_url(s["q"]), s.get("name", "GoogleNews")))
-                names.append(s.get("name", s["q"]))
+                name = s.get("name", s["q"])
+                if name in off:
+                    continue
+                tasks.append(fetch_rss(c, google_news_url(s["q"]), name))
+                names.append(name)
             for s in src.get("hackernews", []):
+                name = f"HN/{s.get('tags')}"
+                if name in off:
+                    continue
                 tasks.append(fetch_hn(c, s.get("tags", "story"), s.get("min_points", 5)))
-                names.append(f"HN/{s.get('tags')}")
+                names.append(name)
             results = await asyncio.gather(*tasks, return_exceptions=True)
         items = []
         for name, res in zip(names, results):
@@ -118,35 +133,50 @@ class NewsAgent:
                     s.add(row)
                 s.commit()
 
+    def _save_research(self, item_id: int, info: dict) -> Item:
+        flags = safety.check(info)
+        info["red_flags"] = flags
+        with session() as s:
+            db = s.get(Item, item_id)
+            db.researched = True
+            db.research_json = json.dumps(info)
+            db.flagged = bool(flags)
+            db.action_link = None if flags else (info.get("action_link") or None)
+            db.cost = (info.get("cost") or None)
+            db.india_ok = (info.get("india_availability") or None)
+            db.deadline_at = news_cards.parse_deadline(info.get("deadline"))
+            s.add(db); s.commit(); s.refresh(db)
+            return db
+
+    def research_one(self, row: Item) -> tuple[Item | None, str]:
+        """One grounded lookup. Returns (item, "") or (None, reason) - never raises."""
+        budget_key = "research:" + datetime.now(timezone.utc).strftime("%Y%m%d")
+        used = r.incr(budget_key)
+        r.expire(budget_key, 2 * 86400)
+        if used > settings.research_daily_cap:      # shared Gemini budget, all agents
+            return None, "budget"
+        prompt = self.research_template().format(label=self.label, title=as_data(row.title),
+                                                 url=as_data(row.url))
+        try:
+            info = research(prompt)
+        except Exception as exc:
+            log.error("[%s] research failed: %s", self.name, exc)
+            return None, "error"
+        return self._save_research(row.id, info), ""
+
     def _research(self):
         with session() as s:
             hot = s.exec(select(Item).where(Item.topic == self.name, Item.score >= self.threshold,
                                             Item.researched == False)  # noqa: E712
                          .order_by(Item.score.desc()).limit(self.max_research)).all()
         done = []
-        budget_key = "research:" + datetime.now(timezone.utc).strftime("%Y%m%d")
         for row in hot:
-            if r.incr(budget_key) > settings.research_daily_cap:   # shared Gemini budget, all agents
-                r.expire(budget_key, 2 * 86400)
+            item, reason = self.research_one(row)
+            if reason == "budget":
                 log.info("[%s] daily research budget used up", self.name)
                 break
-            r.expire(budget_key, 2 * 86400)
-            prompt = self.research_template().format(label=self.label, title=row.title, url=row.url)
-            try:
-                info = research(prompt)
-            except Exception as exc:
-                log.error("[%s] research failed: %s", self.name, exc)
-                continue
-            flags = safety.check(info)
-            info["red_flags"] = flags
-            with session() as s:
-                db = s.get(Item, row.id)
-                db.researched = True
-                db.research_json = json.dumps(info)
-                db.flagged = bool(flags)
-                db.action_link = None if flags else (info.get("action_link") or None)
-                s.add(db); s.commit(); s.refresh(db)
-                done.append(db)
+            if item:
+                done.append(item)
         return done
 
     async def run(self):
@@ -184,33 +214,30 @@ class NewsAgent:
 
     async def submit(self, row: Item):
         await cream.submit(f"news:{row.id}", self.name, self.priority(row),
-                           format_item(row, self.label), item_buttons(row))
+                           format_item(row, self.label), item_buttons(row), category=row.category)
 
 
 def format_item(row: Item, label: str) -> str:
-    info = json.loads(row.research_json) if row.research_json else {}
-    tag = "⭐ " if row.personal else ""
-    lines = [f"<b>{tag}[{esc(label)}] {esc(row.title)}</b>"]
-    if row.why:
-        lines.append(f"<i>{esc(row.why)}</i>")
-    lines.append(f"Score {row.score} · {esc(row.category)} · urgency {esc(row.urgency)}")
-    step = info.get("what_to_do") or row.action
-    if step and step != "none":
-        lines.append(f"➡️ {esc(step)}")
-    meta = []
-    if info.get("cost"): meta.append(f"💰 {esc(info['cost'])}")
-    if info.get("deadline"): meta.append(f"⏰ {esc(info['deadline'])}")
-    if info.get("india_availability"): meta.append(f"🇮🇳 {esc(info['india_availability'])}")
-    if meta:
-        lines.append(" | ".join(meta))
-    if info.get("legitimacy"):
-        lines.append(f"Legitimacy: {esc(info['legitimacy'])} — {esc(info.get('evidence'))}")
-    for f in info.get("red_flags") or []:
-        lines.append(f"⚠️ {esc(f)}")
-    return "\n".join(lines)
+    return news_cards.news_card(row, label)
 
 
 def item_buttons(row: Item) -> str:
-    first = [("🔗 Official link", row.action_link, None)] if row.action_link else []
-    first.append(("📰 Source", row.url, None))
-    return cream.buttons(first, [("👍", None, f"v:up:{row.id}"), ("👎", None, f"v:dn:{row.id}")])
+    """One tap for everything you might want to do with a story."""
+    open_row = [("🔗 Open", row.action_link or row.url, None), ("⭐ Save", None, f"n:save:{row.id}")]
+    if row.deadline_at or not row.researched:
+        open_row.append(("⏰ Remind me", None, f"n:rem:{row.id}"))
+    return cream.buttons(
+        open_row,
+        [("👍 More like this", None, f"v:up:{row.id}"), ("👎 Not useful", None, f"v:dn:{row.id}")],
+        [("🙈 Less of this kind", None, f"n:less:{row.id}"),
+         ("🔎 Tell me more", None, f"n:tell:{row.id}")],
+    )
+
+
+def agent_for_topic(topic: str):
+    """Rebuild the agent that owns a topic, so a button can research one item on demand."""
+    from ..orchestrator import load_config
+    for name, cfg in load_config().items():
+        if cfg.get("type") == "news" and cfg.get("topic", name) == topic:
+            return NewsAgent(name, cfg)
+    return None

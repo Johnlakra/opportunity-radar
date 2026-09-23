@@ -14,12 +14,13 @@ from .. import cream
 from ..crypto import dexscreener as dx
 from ..crypto import geckoterminal as gt
 from ..crypto import regime, security, socials
-from ..crypto.chains import CHAINS, GECKO_TO_CHAIN, coin_key, norm
+from ..crypto.chains import CHAINS, SCOUT_CHAINS, coin_key, has_security, norm
 from ..crypto.http import client
 from ..crypto.scout_rules import Snapshot, evaluate, prefilter
 from ..db import session
 from ..models import Coin
 from ..notifier import esc
+from ..text import price as fmt_price
 from ..redis_client import r
 
 log = logging.getLogger(__name__)
@@ -35,7 +36,14 @@ class TokenScoutAgent:
 
     def __init__(self, name, cfg):
         self.name = name
-        self.chains = [ch for ch in cfg.get("chains", list(CHAINS)) if ch in CHAINS]
+        wanted = [ch for ch in cfg.get("chains", SCOUT_CHAINS) if ch in CHAINS]
+        # A checklist without a safety report is not a checklist, so the scout only crawls
+        # chains that have one. The other chains stay fully usable for search and the journal.
+        self.chains = [ch for ch in wanted if has_security(ch)]
+        skipped = [ch for ch in wanted if not has_security(ch)]
+        if skipped:
+            log.warning("[scout] skipping %s: no free safety report on those chains yet",
+                        ", ".join(skipped))
         self.shadow = bool(cfg.get("shadow_mode", True))
 
     # ---------------- discovery ----------------
@@ -74,13 +82,15 @@ class TokenScoutAgent:
         b = dx.basics(pair)
         key = coin_key(chain, addr)
         s = Snapshot(chain=chain, address=addr, symbol=b["symbol"], name=b["name"], pair_url=b["pair_url"],
-                     mcap=b["mcap"], fdv=b["fdv"], liquidity=b["liquidity"], vol24=b["vol24"],
-                     age_hours=b["age_hours"], websites=b["websites"], twitter=b["twitter"],
+                     price=b["price"], mcap=b["mcap"], fdv=b["fdv"], liquidity=b["liquidity"], vol24=b["vol24"],
+                     chg24=b["chg24"], age_hours=b["age_hours"], websites=b["websites"], twitter=b["twitter"],
                      telegram=b["telegram"], is_cto=key in ctos, boosted=b["boosted"] or key in boosted)
         s.sec = await security.check(c, chain, addr, set(w.lower() if chain != "solana" else w
                                                           for w in R.get("exchange_wallets", [])))
         net = CHAINS[chain]["gecko"]
         try:
+            if not net:
+                raise ValueError("no GeckoTerminal coverage for this chain")
             daily = await gt.ohlcv(c, net, b["pool"], "day", 1, 120)
             h4 = await gt.ohlcv(c, net, b["pool"], "hour", 4, 6 * R["price_location"]["range_window_days"])
             loc = gt.price_location(daily, h4)
@@ -135,17 +145,24 @@ class TokenScoutAgent:
             await cream.submit(f"scout:{key}:{datetime.now(timezone.utc):%Y%W}", "token_scout", pri,
                                format_verdict(snap, v), scout_buttons(snap))
 
-    async def check_one(self, chain: str, address: str) -> tuple[str, str]:
+    async def analyse(self, chain: str, address: str):
+        """Full checklist for one token -> (Snapshot, Verdict, rules) or (None, None, rules)."""
         R = load_rules()
         reg = await regime.current()
         addr = norm(chain, address)
         async with client() as c:
             pair = dx.best_pairs(chain, await dx.pairs_for(c, chain, [addr])).get(addr)
             if not pair:
-                return "No DEX pair found for that address on " + esc(chain), "[]"
+                return None, None, R
             snap = await self.snapshot(c, chain, addr, pair, R)
         v = evaluate(snap, R, reg["state"])
         await self.record(snap, v)
+        return snap, v, R
+
+    async def check_one(self, chain: str, address: str) -> tuple[str, str]:
+        snap, v, _ = await self.analyse(chain, address)
+        if snap is None:
+            return "No DEX pair found for that address on " + esc(chain), "[]"
         return format_verdict(snap, v), scout_buttons(snap)
 
 
@@ -153,7 +170,8 @@ def format_verdict(s: Snapshot, v) -> str:
     icon = {"BUY_ZONE": "🎯", "WATCH": "👀", "REJECT": "⛔"}[v.stage]
     sec = s.sec
     lines = [f"<b>{icon} {v.stage}: {esc(s.symbol)}</b> ({esc(s.name)}) · {esc(s.chain)}",
-             f"MCap ${s.mcap or 0:,.0f} · Liq ${s.liquidity or 0:,.0f} · Vol24 ${s.vol24 or 0:,.0f} · "
+             f"Price {fmt_price(s.price)} · MCap ${s.mcap or 0:,.0f} · "
+             f"Liq ${s.liquidity or 0:,.0f} · Vol24 ${s.vol24 or 0:,.0f} · "
              f"Age {(s.age_hours or 0) / 24:.0f}d"]
     if s.range_pos is not None:
         lines.append(f"Range position {s.range_pos:.0%} · {s.drawdown or 0:.0%} below ATH")
@@ -175,7 +193,9 @@ def format_verdict(s: Snapshot, v) -> str:
 
 def scout_buttons(s: Snapshot) -> str:
     key = coin_key(s.chain, s.address)
-    sec_url = (f"https://rugcheck.xyz/tokens/{s.address}" if s.chain == "solana"
-               else f"https://gopluslabs.io/token-security/{CHAINS[s.chain]['goplus']}/{s.address}")
+    cfg = CHAINS.get(s.chain) or {}
+    sec_url = (f"https://rugcheck.xyz/tokens/{s.address}" if cfg.get("security") == "rugcheck"
+               else (f"https://gopluslabs.io/token-security/{cfg['goplus']}/{s.address}"
+                     if cfg.get("security") == "goplus" else None))
     return cream.buttons([("📊 Chart", s.pair_url or None, None), ("🛡 Security", sec_url, None)],
                          [("👀 Watch", None, f"w:{key}"), ("🗑 Ignore", None, f"x:{key}")])

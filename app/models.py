@@ -26,6 +26,14 @@ class Item(SQLModel, table=True):
     research_json: Optional[str] = None
     action_link: Optional[str] = None
     flagged: bool = False            # research found red flags -> never delivered
+    # --- things you did with the item (see app/migrate.py for old databases) ---
+    saved: bool = False
+    saved_at: Optional[datetime] = None
+    remind_at: Optional[datetime] = None
+    reminded: bool = False
+    deadline_at: Optional[datetime] = None
+    india_ok: Optional[str] = None   # available | restricted | unknown
+    cost: Optional[str] = None       # free | paid | credits
 
 
 class Alert(SQLModel, table=True):
@@ -46,6 +54,7 @@ class Feedback(SQLModel, table=True):
     ref: str
     title: str
     category: Optional[str] = None
+    source: str = ""                 # which feed it came from, for per-source quality
     vote: str  # "up" | "down"
     created_at: datetime = Field(default_factory=now)
 

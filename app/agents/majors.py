@@ -7,6 +7,7 @@ from .. import cream
 from ..crypto import coingecko, regime
 from ..crypto.http import client
 from ..notifier import esc
+from ..text import money, price
 
 STABLE_WORDS = ("usd", "eur", "wrapped", "staked", "bridged", "restaked", "liquid staking", "tether", "gold")
 
@@ -54,6 +55,7 @@ class MajorsAgent:
         week = datetime.now(timezone.utc).strftime("%G%V")
         for x in picks[:self.max_per_run]:
             text = (f"<b>🏛 Discounted major: {esc(x['name'])} ({esc(x['symbol'].upper())})</b> · rank #{x['market_cap_rank']}\n"
+                    f"{price(x.get('current_price'))} · market cap {money(x.get('market_cap'))}\n"
                     f"{x['ath_change_percentage']:.0f}% from ATH · 30d {x['price_change_percentage_30d_in_currency']:+.0f}% "
                     f"(BTC {btc30:+.0f}%) · vol/mcap {x['total_volume'] / x['market_cap']:.1%}\n"
                     f"Regime: {reg['state']}{' · altseason signal' if reg.get('altseason') else ''}\n"

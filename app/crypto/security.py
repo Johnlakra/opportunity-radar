@@ -20,18 +20,32 @@ class Security:
     available: bool = True                   # False = no report -> treated as a reject (fail-safe)
 
 
+def _result_for(payload: dict, address: str) -> dict | None:
+    """GoPlus keys the result by the address - lowercased on EVM, as-sent on Tron."""
+    result = payload.get("result") or {}
+    wanted = address.lower()
+    for key, value in result.items():
+        if key.lower() == wanted:
+            return value
+    return None
+
+
 async def check(c, chain: str, address: str, exchange_wallets: set[str]) -> Security:
+    source = (CHAINS.get(chain) or {}).get("security")
+    if not source:
+        # Lookup-only chain (TON, Sui, Aptos...). The checklist's fail-safe rule stands:
+        # no report means the scout must not pass the token.
+        return Security("none", warn=[f"No free safety report covers {chain} yet"], available=False)
     try:
-        if chain == "solana":
+        if source == "rugcheck":
             rep = await get_json(c, f"https://api.rugcheck.xyz/v1/tokens/{address}/report", RUG)
             return rugcheck_summary(rep, exchange_wallets)
         d = await get_json(c, f"https://api.gopluslabs.io/api/v1/token_security/{CHAINS[chain]['goplus']}",
                            GOPLUS, params={"contract_addresses": address})
-        g = (d.get("result") or {}).get(address.lower())
+        g = _result_for(d, address)
         return goplus_summary(g, exchange_wallets) if g else Security("goplus", available=False)
     except Exception as exc:
-        return Security("rugcheck" if chain == "solana" else "goplus", warn=[f"security API error: {exc}"],
-                        available=False)
+        return Security(source, warn=[f"security API error: {exc}"], available=False)
 
 
 def rugcheck_summary(rep: dict, exchange_wallets: set[str]) -> Security:

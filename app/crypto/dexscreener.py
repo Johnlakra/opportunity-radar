@@ -42,6 +42,18 @@ async def pairs_for(c, chain: str, addresses: list[str]) -> list[dict]:
     return pairs
 
 
+async def search(c, query: str) -> list[dict]:
+    """Free-text search across every chain: name, symbol, token address or pair address."""
+    d = await get_json(c, f"{BASE}/latest/dex/search", DEX_PAIRS, params={"q": query})
+    return _list(d)
+
+
+async def pair(c, chain: str, pair_address: str) -> dict | None:
+    """One pair by its POOL address (what a DexScreener URL contains)."""
+    pairs = _list(await get_json(c, f"{BASE}/latest/dex/pairs/{CHAINS[chain]['dex']}/{pair_address}", DEX_PAIRS))
+    return pairs[0] if pairs else None
+
+
 def best_pairs(chain: str, pairs: list[dict]) -> dict[str, dict]:
     """Highest-liquidity pair per base token."""
     best = {}
@@ -61,8 +73,13 @@ def basics(p: dict) -> dict:
         socials[typ] = s.get("url") or s.get("handle")
     created = p.get("pairCreatedAt")
     base = p.get("baseToken") or {}
+    try:
+        price = float(p["priceUsd"]) if p.get("priceUsd") not in (None, "") else None
+    except (TypeError, ValueError):
+        price = None
     return {
         "symbol": base.get("symbol", ""), "name": base.get("name", ""),
+        "price": price,
         "mcap": p.get("marketCap") or p.get("fdv"), "fdv": p.get("fdv"),
         "liquidity": (p.get("liquidity") or {}).get("usd"),
         "vol24": (p.get("volume") or {}).get("h24"),

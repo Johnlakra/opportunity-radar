@@ -13,13 +13,15 @@ from .agents.guardian import GuardianAgent
 from .agents.majors import MajorsAgent
 from .agents.news import NewsAgent
 from .agents.regime_agent import RegimeAgent
+from .agents.reminders import RemindersAgent
 from .agents.token_scout import TokenScoutAgent
 from .db import init_db
 from .redis_client import r
 
 log = logging.getLogger(__name__)
 TYPES = {"news": NewsAgent, "regime": RegimeAgent, "token_scout": TokenScoutAgent,
-         "majors": MajorsAgent, "guardian": GuardianAgent, "curator": CuratorAgent}
+         "majors": MajorsAgent, "guardian": GuardianAgent, "curator": CuratorAgent,
+         "reminders": RemindersAgent}
 
 
 def load_config() -> dict:
