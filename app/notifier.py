@@ -16,8 +16,11 @@ def btn(text, url=None, data=None):
     return InlineKeyboardButton(text, callback_data=data)
 
 
-async def send(text: str, rows: list[list] | None = None):
-    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+async def send(text: str, rows: list[list] | None = None, chat_ids: list[str] | None = None):
+    """One message, to whoever it is for. chat_ids=None means the people with full access,
+    which is what every existing caller wants. One blocked chat never stops the others."""
+    targets = chat_ids if chat_ids is not None else settings.chat_ids
+    if not settings.telegram_bot_token or not targets:
         log.info("[telegram disabled] %s", text[:200])
         return
     markup = None
@@ -25,6 +28,9 @@ async def send(text: str, rows: list[list] | None = None):
         rows = [[b for b in row if b] for row in rows]
         markup = InlineKeyboardMarkup([row for row in rows if row])
     async with Bot(settings.telegram_bot_token) as bot:
-        await bot.send_message(chat_id=settings.telegram_chat_id, text=text[:4000],
-                               parse_mode="HTML", reply_markup=markup,
-                               disable_web_page_preview=True)
+        for chat_id in targets:
+            try:
+                await bot.send_message(chat_id=chat_id, text=text[:4000], parse_mode="HTML",
+                                       reply_markup=markup, disable_web_page_preview=True)
+            except Exception as exc:
+                log.warning("could not reach chat %s: %s", chat_id, exc)

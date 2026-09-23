@@ -18,31 +18,45 @@ METALS = {"metal:XAU": "Gold", "metal:XAG": "Silver"}
 JOURNAL_PREFIX = {"cg": "cg:", "dex": "dex:"}
 
 
-# ---------------- what you watch ----------------
-def all_subs(active_only: bool = False) -> list[LevelSub]:
+# ---------------- what each person watches ----------------
+# Every subscription belongs to one chat id. Two people watching gold have two rows, so their
+# periods, directions and on/off switches never touch each other.
+def all_subs(chat_id: str | None = None, active_only: bool = False) -> list[LevelSub]:
     with session() as s:
         query = select(LevelSub).order_by(LevelSub.id)
+        if chat_id is not None:
+            query = query.where(LevelSub.chat_id == str(chat_id))
         if active_only:
             query = query.where(LevelSub.active == True)          # noqa: E712
         return list(s.exec(query).all())
 
 
-def get_sub(sub_id: int) -> LevelSub | None:
+def get_sub(sub_id: int, chat_id: str | None = None) -> LevelSub | None:
+    """With a chat_id, a row belonging to someone else is simply not found."""
     with session() as s:
-        return s.get(LevelSub, sub_id)
+        row = s.get(LevelSub, sub_id)
+        if row and chat_id is not None and row.chat_id != str(chat_id):
+            return None
+        return row
 
 
-def by_key(asset_key: str) -> LevelSub | None:
+def by_key(chat_id: str, asset_key: str) -> LevelSub | None:
     with session() as s:
-        return s.exec(select(LevelSub).where(LevelSub.asset_key == asset_key)).first()
+        return s.exec(select(LevelSub).where(LevelSub.chat_id == str(chat_id),
+                                             LevelSub.asset_key == asset_key)).first()
 
 
-def upsert(asset_key: str, label: str, periods: str, source: str = "manual") -> LevelSub:
-    """Create it, or wake a deactivated one back up. Never overwrites what you edited by hand."""
+def upsert(chat_id: str, asset_key: str, label: str, periods: str,
+           source: str = "manual") -> LevelSub:
+    """Create it for this person, or wake their deactivated one back up.
+    Never overwrites settings they changed by hand."""
+    chat_id = str(chat_id)
     with session() as s:
-        row = s.exec(select(LevelSub).where(LevelSub.asset_key == asset_key)).first()
+        row = s.exec(select(LevelSub).where(LevelSub.chat_id == chat_id,
+                                            LevelSub.asset_key == asset_key)).first()
         if row is None:
-            row = LevelSub(asset_key=asset_key, label=label, periods=periods, source=source)
+            row = LevelSub(chat_id=chat_id, asset_key=asset_key, label=label,
+                           periods=periods, source=source)
         else:
             row.label = row.label or label
             row.active = True
@@ -53,7 +67,7 @@ def upsert(asset_key: str, label: str, periods: str, source: str = "manual") -> 
 
 
 def update(sub_id: int, **fields) -> LevelSub | None:
-    """Any change you make by hand marks the row manual, so the journal sync leaves it alone."""
+    """Any change made by hand marks the row manual, so the journal sync leaves it alone."""
     with session() as s:
         row = s.get(LevelSub, sub_id)
         if not row:
@@ -65,9 +79,10 @@ def update(sub_id: int, **fields) -> LevelSub | None:
         return row
 
 
-def set_active(asset_key: str, active: bool) -> None:
+def set_active(chat_id: str, asset_key: str, active: bool) -> None:
     with session() as s:
-        row = s.exec(select(LevelSub).where(LevelSub.asset_key == asset_key)).first()
+        row = s.exec(select(LevelSub).where(LevelSub.chat_id == str(chat_id),
+                                            LevelSub.asset_key == asset_key)).first()
         if row:
             row.active = active
             s.add(row); s.commit()
@@ -82,32 +97,37 @@ def remove(sub_id: int) -> bool:
         return True
 
 
-def seed_metals(periods: str) -> None:
-    for asset_key, label in METALS.items():
-        if by_key(asset_key) is None:
-            upsert(asset_key, label, periods, source="default")
+def seed_metals(periods: str, chat_ids: list[str]) -> int:
+    """Everyone who is allowed metal alerts gets their own gold and silver row."""
+    made = 0
+    for chat_id in chat_ids:
+        for asset_key, label in METALS.items():
+            if by_key(chat_id, asset_key) is None:
+                upsert(chat_id, asset_key, label, periods, source="default")
+                made += 1
+    return made
 
 
 def holding_key(holding: Holding) -> str:
     return f"cg:{holding.ref}" if holding.kind == "cg" else f"dex:{holding.ref}"
 
 
-def sync_journal(periods: str) -> tuple[int, int]:
-    """Journal coins get alerts automatically; sold ones go quiet. Rows you edited are untouched.
-    Returns (added, deactivated)."""
+def sync_journal(periods: str, owner_chat_ids: list[str]) -> tuple[int, int]:
+    """Journal coins get alerts automatically, for the people who own the journal.
+    Sold ones go quiet. Rows edited by hand are untouched. Returns (added, deactivated)."""
     with session() as s:
         holdings = list(s.exec(select(Holding)).all())
     wanted = {holding_key(h): (h.symbol or h.ref) for h in holdings}
-    added = 0
-    for asset_key, label in wanted.items():
-        if by_key(asset_key) is None:
-            upsert(asset_key, label, periods, source="journal")
-            added += 1
-    gone = 0
-    for row in all_subs():
-        if row.source == "journal" and row.active and row.asset_key not in wanted:
-            set_active(row.asset_key, False)
-            gone += 1
+    added = gone = 0
+    for chat_id in owner_chat_ids:
+        for asset_key, label in wanted.items():
+            if by_key(chat_id, asset_key) is None:
+                upsert(chat_id, asset_key, label, periods, source="journal")
+                added += 1
+        for row in all_subs(chat_id):
+            if row.source == "journal" and row.active and row.asset_key not in wanted:
+                set_active(chat_id, row.asset_key, False)
+                gone += 1
     return added, gone
 
 
@@ -117,6 +137,11 @@ def periods_of(sub: LevelSub) -> list[str]:
 
 def directions_of(sub: LevelSub) -> list[str]:
     return [d for d, on in (("up", sub.up), ("down", sub.down)) if on]
+
+
+def wants(sub: LevelSub, period: str, direction: str) -> bool:
+    """Does this person want to hear about this exact break?"""
+    return bool(sub.active) and period in periods_of(sub) and direction in directions_of(sub)
 
 
 # ---------------- daily history (metals only) ----------------

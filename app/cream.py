@@ -55,7 +55,9 @@ def buttons(*rows):
 
 
 async def submit(key: str, topic: str, priority: int, text: str, buttons_json: str = "[]",
-                 category: str | None = None):
+                 category: str | None = None, chat_ids: list[str] | None = None):
+    """chat_ids=None sends to everyone with full access - what every caller but the level
+    alerts wants, and why nothing else in the bot changed."""
     priority = max(0, min(100, int(priority)))
     with session() as s:
         alert = Alert(key=key, topic=topic, priority=priority, text=text, buttons_json=buttons_json)
@@ -72,7 +74,7 @@ async def submit(key: str, topic: str, priority: int, text: str, buttons_json: s
         _mark(alert.id, "dropped")
         return
     if verdict == "urgent" and _take_urgent_slot(priority):
-        await send(text, _rows(buttons_json))
+        await send(text, _rows(buttons_json), chat_ids)
         _mark(alert.id, "urgent")
 
 

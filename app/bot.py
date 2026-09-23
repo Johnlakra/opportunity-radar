@@ -47,7 +47,17 @@ Chains I can look up (price, journal, alerts - no safety report yet): {", ".join
 
 
 def mine(update: Update) -> bool:
-    return str(update.effective_chat.id) == str(settings.telegram_chat_id)
+    """True for anyone listed in TELEGRAM_CHAT_ID. Everyone else is ignored in silence,
+    with their chat id logged so you can add them if you meant to."""
+    chat_id = update.effective_chat.id
+    if settings.may_use(chat_id):
+        return True
+    if settings.may_see_metals(chat_id):
+        logging.info("chat %s has metal alerts only; ignoring a full-access command", chat_id)
+    else:
+        logging.info("ignored a message from chat id %s (add it to TELEGRAM_CHAT_ID to allow)",
+                     chat_id)
+    return False
 
 
 async def reply(update: Update, text: str, buttons_json: str = "[]"):

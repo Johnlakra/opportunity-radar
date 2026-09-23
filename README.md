@@ -38,7 +38,7 @@ Nothing reaches you except through that gate — there is no side door.
 
 ## Setup (≈20 minutes)
 1. **Telegram:** message @BotFather → `/newbot` → copy the token. Send your bot a message, then open
-   `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `chat.id`.
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `chat.id` into `TELEGRAM_CHAT_ID`.
 2. **Gemini key:** aistudio.google.com → Get API key (free tier).
 3. **CoinGecko demo key (free, recommended):** coingecko.com → Developer dashboard.
 4. `cp .env.example .env` and fill in the keys (add `COINGECKO_API_KEY=` too).
@@ -140,6 +140,32 @@ Gold is quoted per 10 g and silver per kg, from international spot converted at 
 rate — **not** MCX, which adds import duty and GST. Set `inr_premium_pct` in `config/agents.yaml`
 to bring the displayed numbers nearer a jeweller's quote; it scales the price and every level by the
 same factor, so it can never change whether something broke.
+
+### Sharing gold and silver with someone
+
+`TELEGRAM_CHAT_ID` is you: every command, every alert. `TELEGRAM_METALS_CHAT_ID` is for someone you
+want to share **only** the gold and silver alerts with.
+
+```bash
+TELEGRAM_CHAT_ID=111111111            # you — everything
+TELEGRAM_METALS_CHAT_ID=222222222     # them — gold and silver, nothing else
+```
+
+To find their id: have them message the bot, then `docker compose logs bot | grep "chat id"`. The bot
+ignores unknown chats but logs the id, so you can add it.
+
+| | You | Them |
+|---|---|---|
+| 🥇🥈 gold & silver alerts, `/alerts`, `/levels` | ✅ | ✅ |
+| Level alerts on your journal coins | ✅ | ❌ never shown |
+| Journal, watchlist, news, digest, settings, `/run` | ✅ | ❌ silence |
+
+**The two sets are independent.** You each get your own Gold and Silver rows, your own W/M/Q/Y and
+↑/↓ toggles, your own pause switch and your own alerts. Turning your weekly gold alerts off does not
+touch theirs; their pause does not silence yours. `/alerts` shows each of you only your own list, so
+your journal coins are never visible to them.
+
+Comma-separate either variable to add more people. Anyone listed in both is treated as full access.
 
 ### News cards you can act on
 

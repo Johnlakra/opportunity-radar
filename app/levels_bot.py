@@ -16,14 +16,31 @@ from .text import esc
 from .ux import level_cards
 
 log = logging.getLogger(__name__)
-PAUSED_KEY = "lv:paused"
+PAUSED_KEY = "lv:paused:{}"     # paused is per person, like everything else here
 SEARCH_URL = f"{CGB}/search"
 MAX_MATCHES = 4
 PERIOD_BUTTONS = ("W", "M", "Q", "Y")
 
 
+def caller(update: Update) -> str:
+    return str(update.effective_chat.id)
+
+
 def mine(update: Update) -> bool:
-    return str(update.effective_chat.id) == str(settings.telegram_chat_id)
+    """Full access: adding coins, the journal shortcut, everything."""
+    if settings.may_use(caller(update)):
+        return True
+    log.info("ignored a message from chat id %s (add it to TELEGRAM_CHAT_ID to allow)",
+             caller(update))
+    return False
+
+
+def may_level(update: Update) -> bool:
+    """Allowed to see and change THEIR OWN level alerts. Everything else stays private."""
+    if settings.may_see_metals(caller(update)):
+        return True
+    log.info("ignored a message from chat id %s (not on any allow list)", caller(update))
+    return False
 
 
 def keyboard(rows) -> InlineKeyboardMarkup | None:
@@ -48,24 +65,29 @@ async def redraw(update: Update, text: str, markup=None):
 
 
 # ---------------- the menu ----------------
-def menu_markup(subs) -> InlineKeyboardMarkup:
+def is_paused(chat_id: str) -> bool:
+    return bool(r.exists(PAUSED_KEY.format(chat_id)))
+
+
+def menu_markup(subs, chat_id: str, full_access: bool) -> InlineKeyboardMarkup:
     buttons = [InlineKeyboardButton(
         f"{level_cards.icon_for(s.asset_key, s.source)} {s.label}"[:24], callback_data=f"lv:a:{s.id}")
         for s in subs]
     rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
-    paused = bool(r.exists(PAUSED_KEY))
-    rows.append([InlineKeyboardButton("📒 Turn on all journal coins", callback_data="lv:j")])
-    rows.append([InlineKeyboardButton("▶️ Resume all" if paused else "⏸ Pause all",
+    if full_access:
+        rows.append([InlineKeyboardButton("📒 Turn on all journal coins", callback_data="lv:j")])
+    rows.append([InlineKeyboardButton("▶️ Resume all" if is_paused(chat_id) else "⏸ Pause all",
                                       callback_data="lv:p")])
     return keyboard(rows)
 
 
 async def show_menu(update: Update, edit: bool = False):
-    subs = level_store.all_subs()
+    """Your own subscriptions only - two people never see each other's lists."""
+    chat_id = caller(update)
+    subs = level_store.all_subs(chat_id)
     rows = [level_cards.menu_row(s, "".join(level_store.periods_of(s))) for s in subs]
-    text = level_cards.menu_text(rows, bool(r.exists(PAUSED_KEY)))
-    markup = menu_markup(subs)
-    await (redraw if edit else say)(update, text, markup)
+    text = level_cards.menu_text(rows, is_paused(chat_id))
+    await (redraw if edit else say)(update, text, menu_markup(subs, chat_id, mine(update)))
 
 
 # ---------------- one asset ----------------
@@ -85,7 +107,7 @@ def panel_markup(sub) -> InlineKeyboardMarkup:
 
 
 async def show_panel(update: Update, sub_id: int, edit: bool = True):
-    sub = level_store.get_sub(sub_id)
+    sub = level_store.get_sub(sub_id, caller(update))
     if not sub:
         return await show_menu(update, edit)
     price, found, _missing = await read_levels(sub)
@@ -140,9 +162,9 @@ async def read_levels(sub) -> tuple[float | None, dict, list[str]]:
 
 
 # ---------------- commands ----------------
-def find_sub(name: str):
+def find_sub(name: str, chat_id: str):
     wanted = (name or "").strip().lower()
-    for sub in level_store.all_subs():
+    for sub in level_store.all_subs(chat_id):
         if wanted in (sub.label.lower(), sub.asset_key.lower()) or \
                 sub.asset_key.lower().endswith(":" + wanted):
             return sub
@@ -150,14 +172,17 @@ def find_sub(name: str):
 
 
 async def cmd_alerts(update: Update, ctx):
-    if not mine(update):
+    if not may_level(update):
         return
     args = list(getattr(ctx, "args", []) or [])
     if not args:
         return await show_menu(update)
     if args[0].lower() == "add":
+        if not mine(update):
+            return await say(update, "You have gold and silver here. Adding coins is not "
+                                     "something this bot does for you.")
         return await add_asset(update, args[1:])
-    sub = find_sub(" ".join(args))
+    sub = find_sub(" ".join(args), caller(update))
     if sub:
         return await show_panel(update, sub.id, edit=False)
     await say(update, f"I am not watching <b>{esc(' '.join(args))}</b>.\n"
@@ -165,12 +190,12 @@ async def cmd_alerts(update: Update, ctx):
 
 
 async def cmd_levels(update: Update, ctx):
-    if not mine(update):
+    if not may_level(update):
         return
     args = list(getattr(ctx, "args", []) or [])
     if not args:
         return await say(update, "Usage: <code>/levels gold</code> — or open 🔔 /alerts.")
-    sub = find_sub(" ".join(args))
+    sub = find_sub(" ".join(args), caller(update))
     if not sub:
         return await say(update, f"I am not watching <b>{esc(' '.join(args))}</b> yet.")
     await send_levels(update, sub)
@@ -190,13 +215,14 @@ async def add_asset(update: Update, args: list[str]):
                                  "<code>/alerts add solana &lt;address&gt;</code>")
     if len(args) >= 2 and args[0] in CHAINS and is_address(args[1]):
         key = coin_key(args[0], norm(args[0], args[1]))
-        sub = level_store.upsert(f"dex:{key}", args[1][:8], journal_periods())
+        sub = level_store.upsert(caller(update), f"dex:{key}", args[1][:8], journal_periods())
         return await show_panel(update, sub.id, edit=False)
     matches = await search_coins(" ".join(args))
     if not matches:
         return await say(update, f"No coin called <b>{esc(' '.join(args))}</b> on CoinGecko.")
     if len(matches) == 1:
-        sub = level_store.upsert(f"cg:{matches[0]['id']}", matches[0]["symbol"], journal_periods())
+        sub = level_store.upsert(caller(update), f"cg:{matches[0]['id']}", matches[0]["symbol"],
+                                 journal_periods())
         return await show_panel(update, sub.id, edit=False)
     rows = [[InlineKeyboardButton(f"{m['symbol']} — {m['name']}"[:40], callback_data=f"lv:n:{m['id']}")]
             for m in matches[:MAX_MATCHES]]
@@ -225,8 +251,9 @@ async def search_coins(query: str) -> list[dict]:
 # ---------------- buttons ----------------
 async def on_button(update: Update, ctx):
     query = update.callback_query
-    if not mine(update):
+    if not may_level(update):
         return await query.answer()
+    chat_id = caller(update)
     parts = (query.data or "").split(":")
     action = parts[1] if len(parts) > 1 else "m"
     arg = parts[2] if len(parts) > 2 else ""
@@ -236,20 +263,25 @@ async def on_button(update: Update, ctx):
         await query.answer()
         return await show_menu(update, edit=True)
     if action == "p":
-        paused = bool(r.exists(PAUSED_KEY))
-        r.delete(PAUSED_KEY) if paused else r.set(PAUSED_KEY, 1)
-        await query.answer("Alerts resumed" if paused else "All alerts paused")
+        key = PAUSED_KEY.format(chat_id)
+        paused = is_paused(chat_id)
+        r.delete(key) if paused else r.set(key, 1)
+        await query.answer("Your alerts are back on" if paused else "Your alerts are paused")
         return await show_menu(update, edit=True)
     if action == "j":
-        added, _ = level_store.sync_journal(journal_periods())
+        if not mine(update):
+            return await query.answer("Not available to you.")
+        added, _ = level_store.sync_journal(journal_periods(), [chat_id])
         await query.answer(f"{added} added from your journal" if added else "Already watching them")
         return await show_menu(update, edit=True)
     if action == "n" and arg:
-        sub = level_store.upsert(f"cg:{arg}", arg.upper(), journal_periods())
+        if not mine(update):
+            return await query.answer("Not available to you.")
+        sub = level_store.upsert(chat_id, f"cg:{arg}", arg.upper(), journal_periods())
         await query.answer(f"Watching {sub.label}")
         return await show_panel(update, sub.id)
 
-    sub = level_store.get_sub(int(arg)) if arg.isdigit() else None
+    sub = level_store.get_sub(int(arg), chat_id) if arg.isdigit() else None
     if not sub:
         await query.answer("That one is gone.")
         return await show_menu(update, edit=True)

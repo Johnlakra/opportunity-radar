@@ -1,6 +1,10 @@
 from sqlalchemy import create_engine, inspect
 
-from app.migrate import MIGRATIONS, ensure_columns, run
+from app.migrate import MIGRATIONS, backfill, drop_stale_indexes, ensure_columns, run
+
+
+def run_drop(db):
+    return drop_stale_indexes(db)
 
 
 def old_database():
@@ -10,6 +14,9 @@ def old_database():
         conn.exec_driver_sql("CREATE TABLE item (id INTEGER PRIMARY KEY, title VARCHAR)")
         conn.exec_driver_sql("CREATE TABLE feedback (id INTEGER PRIMARY KEY, vote VARCHAR)")
         conn.exec_driver_sql("CREATE TABLE holding (id INTEGER PRIMARY KEY, usd FLOAT)")
+        conn.exec_driver_sql("CREATE TABLE levelsub (id INTEGER PRIMARY KEY, asset_key VARCHAR)")
+        # how it was created when there was only ever one subscriber
+        conn.exec_driver_sql("CREATE UNIQUE INDEX ix_levelsub_asset_key ON levelsub (asset_key)")
     return db
 
 
@@ -49,3 +56,39 @@ def test_unsafe_identifiers_are_refused():
         except ValueError:
             continue
         raise AssertionError(f"{bad!r} should have been refused")
+
+
+def test_the_unique_index_on_a_subscription_is_dropped():
+    """One subscriber per asset was right until two people watched the same metal."""
+    db = old_database()
+    assert "ix_levelsub_asset_key" in run_drop(db)
+    assert not any(i["unique"] for i in inspect(db).get_indexes("levelsub"))
+
+
+def test_dropping_it_twice_is_harmless():
+    db = old_database()
+    run_drop(db)
+    assert run_drop(db) == []
+
+
+def test_existing_subscriptions_are_handed_to_the_owner():
+    db = old_database()
+    with db.begin() as conn:
+        conn.exec_driver_sql("INSERT INTO levelsub (id, asset_key) VALUES (1, 'metal:XAU')")
+    run(db, "999")
+    with db.begin() as conn:
+        assert conn.exec_driver_sql("SELECT chat_id FROM levelsub").fetchone()[0] == "999"
+
+
+def test_a_row_that_already_belongs_to_someone_is_left_alone():
+    db = old_database()
+    run(db, "999")
+    with db.begin() as conn:
+        conn.exec_driver_sql("INSERT INTO levelsub (id, asset_key, chat_id) VALUES (2, 'x', '111')")
+    run(db, "999")
+    with db.begin() as conn:
+        assert conn.exec_driver_sql("SELECT chat_id FROM levelsub WHERE id = 2").fetchone()[0] == "111"
+
+
+def test_backfilling_a_table_that_is_not_there_yet_is_a_no_op():
+    assert backfill(create_engine("sqlite://"), "levelsub", "chat_id", "1") == 0

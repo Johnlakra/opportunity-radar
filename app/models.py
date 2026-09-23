@@ -96,7 +96,8 @@ class LevelSub(SQLModel, table=True):
     """One thing you want level alerts for: gold, silver, or any coin.
     asset_key is "metal:XAU" | "metal:XAG" | "cg:<coingecko-id>" | "dex:<chain>:<address>"."""
     id: Optional[int] = Field(default=None, primary_key=True)     # what the buttons carry
-    asset_key: str = Field(index=True, unique=True)
+    chat_id: str = Field(default="", index=True)                  # whose subscription this is
+    asset_key: str = Field(index=True)                            # unique per chat, not globally
     label: str = ""
     periods: str = "WMQY"                # which of W/M/Q/Y are switched on
     up: bool = True                      # alert when it breaks above the previous high

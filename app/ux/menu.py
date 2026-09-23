@@ -57,8 +57,12 @@ async def setup(app) -> None:
     try:
         commands_list = [BotCommand(name, desc[:256]) for name, desc in commands()]
         await app.bot.set_my_commands(commands_list)
-        if settings.telegram_chat_id:
-            chat = int(settings.telegram_chat_id)
+        for chat_id in settings.chat_ids:
+            try:
+                chat = int(chat_id)
+            except ValueError:
+                log.warning("TELEGRAM_CHAT_ID has a non-numeric entry: %r", chat_id)
+                continue
             await app.bot.set_my_commands(commands_list, scope=BotCommandScopeChat(chat))
             await app.bot.set_chat_menu_button(chat_id=chat, menu_button=MenuButtonCommands())
     except Exception:                       # a menu that failed to register must not stop the bot

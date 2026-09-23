@@ -12,7 +12,8 @@ engine = create_engine(settings.database_url, connect_args=_args)
 
 def init_db():
     from . import models  # noqa: F401  (register tables)
-    _migrate.run(engine)                    # old database -> columns added since it was created
+    owner = settings.chat_ids[0] if settings.chat_ids else ""
+    _migrate.run(engine, owner)             # old database -> columns added since it was created
     SQLModel.metadata.create_all(engine)
 
 
