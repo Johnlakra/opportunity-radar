@@ -34,6 +34,7 @@ Nothing reaches you except through that gate — there is no side door.
 | **token_scout** | DEX tokens through the course checklist, on any chain with a free safety report. **Shadow mode by default.** |
 | **curator** | The daily summary, plus a weekly "what I learned from your 👍/👎". |
 | **reminders** | Sends the ⏰ reminders you set, once each, never dropped. |
+| **level_watch** | Gold and silver in ₹, plus every journal coin: alerts when one breaks the previous week/month/quarter/year high or low. |
 
 ## Setup (≈20 minutes)
 1. **Telegram:** message @BotFather → `/newbot` → copy the token. Send your bot a message, then open
@@ -110,6 +111,35 @@ holding, and a TOTAL line at the end.
 | `entry_price_usd` · `entry_price_source` | what one coin cost you. `recorded` when the journal saved it; `estimated from market cap` for rows added before it did, worked back from the market-cap ratio |
 | `entry_market_cap_usd` · `current_price_usd` · `current_market_cap_usd` | then and now |
 | `multiple_x` · `value_now_usd` · `profit_usd` · `profit_pct` · `link` | where you stand |
+
+### Level alerts
+
+`/alerts` — gold, silver and every coin in your journal, watched against the previous week, month,
+quarter and year high and low. Everything is buttons; the menu edits itself in place.
+
+```
+🥇 GOLD broke ABOVE last month's high
+₹132,791 /10g · level ₹124,878 /10g · +6.34% beyond · (intl spot in ₹)
+Levels · W 136,862/131,839 · M 145,887/124,878 · Q 147,085/120,378 · Y 132,416/72,240
+[📈 Chart] [📊 Levels] [🔕 Turn off this]
+```
+
+A level only counts once its period has **finished**, and a level that changed because the calendar
+rolled over is never treated as a break. Each asset, period and direction can alert at most once per
+period. `/levels gold` shows every level and how far away it is.
+
+| | |
+|---|---|
+| `/alerts` | the menu · tap an asset for `[W][M][Q][Y]`, `[↑ above high][↓ below low]`, on/off, remove |
+| `/alerts gold` · `/alerts sol` | jump straight to that asset |
+| `/alerts add bitcoin` | search CoinGecko and start watching it |
+| `/alerts add solana <address>` | watch any DEX token |
+| `/levels <asset>` | previous W/M/Q/Y high and low, and the distance to each |
+
+Gold is quoted per 10 g and silver per kg, from international spot converted at the live USD-INR
+rate — **not** MCX, which adds import duty and GST. Set `inr_premium_pct` in `config/agents.yaml`
+to bring the displayed numbers nearer a jeweller's quote; it scales the price and every level by the
+same factor, so it can never change whether something broke.
 
 ### News cards you can act on
 
@@ -209,6 +239,7 @@ News queries), add an entry in `config/agents.yaml` with `type: news`. Or ask Cl
 | Gemini Flash-Lite | understanding a typed sentence the keyword router missed | one short call, only as a fallback |
 | GeckoTerminal / DexScreener / RugCheck / GoPlus / CoinGecko | crypto data, name search | per-API throttles in `app/crypto/http.py` |
 | alternative.me | Fear & Greed for Market Mood | cached 6h in Redis |
+| xaus.com · frankfurter · Binance data · Yahoo chart | gold/silver spot and history, USD-INR, daily candles | keyless; throttled in `app/crypto/http.py`, history fetched once |
 
 ## What came from the course, and what was deliberately left out
 **Encoded:** market-cap range, no fresh launches (≥100h), volume, liquidity ≤ mcap, FDV ≈ mcap, holders ≥1000,

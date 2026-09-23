@@ -22,6 +22,7 @@ from .notifier import esc
 from .text import price as fmt_price
 from .orchestrator import build_agents, run_agent
 from .redis_client import r
+from . import levels_bot
 from .ux import flows, menu, news, router, settings as settings_ux  # noqa: F401 (menu registration)
 
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +39,8 @@ HELP = """<b>Opportunity Radar</b>
 /hold cg &lt;coingecko-id&gt; &lt;usd&gt; – journal a listed coin (e.g. /hold cg solana 100)
 /hold &lt;chain&gt; &lt;address&gt; &lt;usd&gt; – journal a DEX token
 /holdings · /sell &lt;id&gt;
+/alerts – level alerts for gold, silver and any coin (buttons)
+/levels &lt;asset&gt; – previous week/month/quarter/year high and low
 /mute &lt;topic&gt; · /unmute &lt;topic&gt; · /more · /agents
 Chains I can check fully: """ + ", ".join(SCOUT_CHAINS) + f"""
 Chains I can look up (price, journal, alerts - no safety report yet): {", ".join(LOOKUP_ONLY)}"""
@@ -267,6 +270,9 @@ def main():
                      ("today", owner_only(news.cmd_today)), ("saved", owner_only(news.cmd_saved)),
                      ("health", owner_only(news.cmd_health))]:
         app.add_handler(CommandHandler(name, fn))
+    app.add_handler(CommandHandler("alerts", levels_bot.cmd_alerts))
+    app.add_handler(CommandHandler("levels", levels_bot.cmd_levels))
+    app.add_handler(CallbackQueryHandler(levels_bot.on_button, pattern=r"^lv:"))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, owner_only(flows.on_text)))
     app.run_polling()

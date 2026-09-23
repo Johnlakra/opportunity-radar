@@ -51,3 +51,12 @@ agents:
     total: 6
     per_topic: 2
     min_priority: 60
+  level_watch:                  # gold/silver (₹) + journal/any crypto: breaks of prev W/M/Q/Y high/low
+    type: level_watch
+    every_min: 15
+    metals_periods: "WMQY"
+    journal_periods: "MQY"      # weekly breaks on small caps are noisy; enable W per coin in /alerts
+    buffer_pct: {metal: 0.1, cg: 0.5, dex: 1.0}
+    priority: {W: 95, M: 95, Q: 95, Y: 95}
+    inr_premium_pct: 0          # e.g. 9 to approximate MCX/jeweller (duty+GST); display only
+    bootstrap_silver_from_yahoo: true

@@ -28,6 +28,10 @@ RUG = Throttle(8)         # RugCheck anonymous: ~10 rpm
 GOPLUS = Throttle(20)
 CG = Throttle(25)         # CoinGecko demo key: 30 rpm
 WEB = Throttle(60)
+XAUS = Throttle(20)       # xaus.com spot + daily history, keyless
+FX = Throttle(20)         # frankfurter.dev daily USD-INR, keyless
+YF = Throttle(10)         # Yahoo chart endpoint: unofficial, used only to bootstrap silver
+BINANCE = Throttle(60)    # data-api.binance.vision klines, keyless
 
 
 async def get_json(client: httpx.AsyncClient, url: str, throttle: Throttle | None = None, **kw):

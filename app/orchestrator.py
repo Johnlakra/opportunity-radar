@@ -10,6 +10,7 @@ import yaml
 
 from .agents.curator import CuratorAgent
 from .agents.guardian import GuardianAgent
+from .agents.level_watch import LevelWatchAgent
 from .agents.majors import MajorsAgent
 from .agents.news import NewsAgent
 from .agents.regime_agent import RegimeAgent
@@ -21,7 +22,7 @@ from .redis_client import r
 log = logging.getLogger(__name__)
 TYPES = {"news": NewsAgent, "regime": RegimeAgent, "token_scout": TokenScoutAgent,
          "majors": MajorsAgent, "guardian": GuardianAgent, "curator": CuratorAgent,
-         "reminders": RemindersAgent}
+         "reminders": RemindersAgent, "level_watch": LevelWatchAgent}
 
 
 def load_config() -> dict:

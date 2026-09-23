@@ -1,0 +1,22 @@
+{
+ "spot_usd_oz": 4314.799805,
+ "silver_usd_oz": 65.315002,
+ "fx_rate": 95.647843,
+ "fx_source": "open.er-api.com",
+ "fx_stale": false,
+ "data_state": {
+  "status": "fresh",
+  "as_of": "2026-09-23T09:58:57.614Z",
+  "source": "upstream",
+  "age_seconds": 0
+ },
+ "updated_at": "2026-09-23T09:58:57.614Z",
+ "price_as_of": "2026-09-23T09:58:57.614Z",
+ "price_source": "gold-api.com",
+ "stale": false,
+ "xau": {
+  "price": 13268.6547,
+  "currency": "INR",
+  "unit": "gram"
+ }
+}

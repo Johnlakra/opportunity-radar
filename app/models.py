@@ -90,3 +90,29 @@ class Holding(SQLModel, table=True):
     entry_price: Optional[float] = None
     usd: float
     added_at: datetime = Field(default_factory=now)
+
+
+class LevelSub(SQLModel, table=True):
+    """One thing you want level alerts for: gold, silver, or any coin.
+    asset_key is "metal:XAU" | "metal:XAG" | "cg:<coingecko-id>" | "dex:<chain>:<address>"."""
+    id: Optional[int] = Field(default=None, primary_key=True)     # what the buttons carry
+    asset_key: str = Field(index=True, unique=True)
+    label: str = ""
+    periods: str = "WMQY"                # which of W/M/Q/Y are switched on
+    up: bool = True                      # alert when it breaks above the previous high
+    down: bool = True                    # alert when it breaks below the previous low
+    active: bool = True
+    source: str = "manual"               # default | journal | manual (manual = you edited it)
+    created_at: datetime = Field(default_factory=now)
+
+
+class DailyBar(SQLModel, table=True):
+    """A day of an asset's history, kept only for metals - crypto bars are cached in Redis."""
+    asset_key: str = Field(primary_key=True)
+    day: str = Field(primary_key=True)   # "YYYY-MM-DD" in your timezone
+    o: float
+    h: float
+    l: float
+    c: float
+    currency: str = "INR"
+    own: bool = False                    # recorded by us from live polls, not bootstrapped
