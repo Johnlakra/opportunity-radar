@@ -126,6 +126,15 @@ def premium() -> float:
     return float(_cfg().get("inr_premium_pct", 0) or 0)
 
 
+def ensure_metals(chat_id: str) -> None:
+    """Give this person their gold and silver rows the moment they ask for them.
+
+    The agent seeds everyone on its own schedule, but a new person should not have to wait
+    up to 15 minutes to see anything - their first message works like yours does."""
+    if settings.may_see_metals(chat_id):
+        level_store.seed_metals(_cfg().get("metals_periods", "WMQY"), [chat_id])
+
+
 async def read_levels(sub) -> tuple[float | None, dict, list[str]]:
     """(price, {period: (high, low)}, periods we cannot answer yet)."""
     today = level_store.local_today()
@@ -174,6 +183,7 @@ def find_sub(name: str, chat_id: str):
 async def cmd_alerts(update: Update, ctx):
     if not may_level(update):
         return
+    ensure_metals(caller(update))
     args = list(getattr(ctx, "args", []) or [])
     if not args:
         return await show_menu(update)
@@ -192,6 +202,7 @@ async def cmd_alerts(update: Update, ctx):
 async def cmd_levels(update: Update, ctx):
     if not may_level(update):
         return
+    ensure_metals(caller(update))
     args = list(getattr(ctx, "args", []) or [])
     if not args:
         return await say(update, "Usage: <code>/levels gold</code> — or open 🔔 /alerts.")
@@ -254,6 +265,7 @@ async def on_button(update: Update, ctx):
     if not may_level(update):
         return await query.answer()
     chat_id = caller(update)
+    ensure_metals(chat_id)
     parts = (query.data or "").split(":")
     action = parts[1] if len(parts) > 1 else "m"
     arg = parts[2] if len(parts) > 2 else ""

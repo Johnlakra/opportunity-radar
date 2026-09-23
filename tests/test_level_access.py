@@ -80,3 +80,32 @@ def test_who_wants_this_break():
     assert not level_store.wants(level_store.by_key(ME, GOLD), "M", "down")
     level_store.update(mine.id, active=False)
     assert not level_store.wants(level_store.by_key(ME, GOLD), "M", "up")
+
+
+# ---------------- a new person should not have to wait for the agent ----------------
+def test_a_person_gets_their_metals_the_moment_they_ask():
+    """Before this, a new guest saw an empty menu until the worker's next 15-minute run."""
+    from app.config import settings
+    from app import levels_bot
+    before_owner, before_guest = settings.telegram_chat_id, settings.telegram_metals_chat_id
+    settings.telegram_chat_id, settings.telegram_metals_chat_id = ME, FRIEND
+    try:
+        assert level_store.all_subs(FRIEND) == []
+        levels_bot.ensure_metals(FRIEND)
+        assert {s.asset_key for s in level_store.all_subs(FRIEND)} == {GOLD, SILVER}
+        levels_bot.ensure_metals(FRIEND)                       # asking again adds nothing
+        assert len(level_store.all_subs(FRIEND)) == 2
+    finally:
+        settings.telegram_chat_id, settings.telegram_metals_chat_id = before_owner, before_guest
+
+
+def test_a_stranger_is_not_given_rows_by_asking():
+    from app.config import settings
+    from app import levels_bot
+    before_owner, before_guest = settings.telegram_chat_id, settings.telegram_metals_chat_id
+    settings.telegram_chat_id, settings.telegram_metals_chat_id = ME, FRIEND
+    try:
+        levels_bot.ensure_metals("999")
+        assert level_store.all_subs("999") == []
+    finally:
+        settings.telegram_chat_id, settings.telegram_metals_chat_id = before_owner, before_guest
