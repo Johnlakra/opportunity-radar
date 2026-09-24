@@ -92,3 +92,22 @@ def test_a_row_that_already_belongs_to_someone_is_left_alone():
 
 def test_backfilling_a_table_that_is_not_there_yet_is_a_no_op():
     assert backfill(create_engine("sqlite://"), "levelsub", "chat_id", "1") == 0
+
+
+def test_every_column_type_also_works_on_postgres():
+    """Render runs on Postgres: it rejects BOOLEAN DEFAULT 0 and has no DATETIME type."""
+    for table, columns in MIGRATIONS.items():
+        for name, ddl in columns.items():
+            upper = ddl.upper()
+            assert "DATETIME" not in upper, f"{table}.{name}"
+            if upper.startswith("BOOLEAN") and "DEFAULT" in upper:
+                assert upper.split("DEFAULT")[1].strip() in ("TRUE", "FALSE"), f"{table}.{name}"
+
+
+def test_an_added_flag_starts_false_on_old_rows():
+    db = old_database()
+    with db.begin() as conn:
+        conn.exec_driver_sql("INSERT INTO item (id, title) VALUES (1, 'hello')")
+    run(db)
+    with db.begin() as conn:
+        assert not conn.exec_driver_sql("SELECT saved, reminded FROM item").fetchone()[0]

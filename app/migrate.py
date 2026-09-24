@@ -12,11 +12,11 @@ _SAFE_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 MIGRATIONS: dict[str, dict[str, str]] = {
     "item": {
-        "saved": "BOOLEAN DEFAULT 0",
-        "saved_at": "DATETIME",
-        "remind_at": "DATETIME",
-        "reminded": "BOOLEAN DEFAULT 0",
-        "deadline_at": "DATETIME",
+        "saved": "BOOLEAN DEFAULT FALSE",
+        "saved_at": "TIMESTAMP",
+        "remind_at": "TIMESTAMP",
+        "reminded": "BOOLEAN DEFAULT FALSE",
+        "deadline_at": "TIMESTAMP",
         "india_ok": "VARCHAR",
         "cost": "VARCHAR",
     },
