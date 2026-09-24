@@ -3,4 +3,5 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-CMD ["python", "-m", "app.scheduler"]
+# Render runs everything in one container; docker compose sets its own command per service.
+CMD ["bash", "start.sh"]

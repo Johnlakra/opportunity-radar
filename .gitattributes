@@ -1,0 +1,2 @@
+# Shell scripts run in Linux containers; a Windows CRLF breaks the #!/bin/bash line.
+*.sh text eol=lf

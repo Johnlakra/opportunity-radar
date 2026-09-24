@@ -6,7 +6,7 @@ added after the first release is listed here and added on boot. Idempotent by de
 Kept free of SQLModel so it can be tested on its own."""
 import re
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 _SAFE_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 
@@ -83,9 +83,9 @@ def backfill(db, table: str, column: str, value: str) -> int:
     if column not in {c["name"] for c in inspector.get_columns(table)}:
         return 0
     with db.begin() as conn:
-        result = conn.exec_driver_sql(
-            f'UPDATE "{table}" SET "{column}" = ? WHERE "{column}" IS NULL OR "{column}" = \'\'',
-            (value,))
+        result = conn.execute(   # text() binds :value on SQLite and Postgres alike; ? is SQLite-only
+            text(f'UPDATE "{table}" SET "{column}" = :value WHERE "{column}" IS NULL OR "{column}" = \'\''),
+            {"value": value})
         return result.rowcount or 0
 
 

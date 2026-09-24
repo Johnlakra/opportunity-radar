@@ -7,7 +7,8 @@ from .config import settings
 
 os.makedirs("data", exist_ok=True)
 _args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=_args)
+# pre_ping: hosted Postgres (Neon) drops idle connections; test each one before use
+engine = create_engine(settings.database_url, connect_args=_args, pool_pre_ping=True)
 
 
 def init_db():
