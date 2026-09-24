@@ -2,6 +2,7 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from .config import settings
@@ -154,7 +155,18 @@ def load_bars(asset_key: str) -> list[dict]:
 
 
 def save_bars(asset_key: str, bars: list[dict], currency: str = "INR", own: bool = False) -> int:
-    """Bootstrapped bars never overwrite a day we recorded ourselves - ours saw every tick."""
+    """Bootstrapped bars never overwrite a day we recorded ourselves - ours saw every tick.
+
+    The bot and the level agent run in separate processes and can bootstrap the same metal at
+    the same moment. If the other one commits first, its rows exist now, so a second pass
+    updates them instead of inserting duplicates."""
+    try:
+        return _write_bars(asset_key, bars, currency, own)
+    except IntegrityError:
+        return _write_bars(asset_key, bars, currency, own)
+
+
+def _write_bars(asset_key: str, bars: list[dict], currency: str, own: bool) -> int:
     written = 0
     with session() as s:
         for bar in bars:
