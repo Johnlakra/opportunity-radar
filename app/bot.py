@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes,
                           MessageHandler, filters)
 
-from . import cream
+from . import cream, stale_buttons
 from .agents.curator import CuratorAgent
 from .agents.token_scout import TokenScoutAgent
 from .config import settings
@@ -269,6 +269,7 @@ async def on_button(update: Update, ctx):
 
 def main():
     init_db()
+    stale_buttons.install()
     app = Application.builder().token(settings.telegram_bot_token).post_init(menu.setup).build()
     for name, fn in [("start", cmd_menu), ("help", cmd_help), ("regime", cmd_regime), ("digest", cmd_digest),
                      ("check", cmd_check), ("watch", cmd_watch), ("hold", cmd_hold), ("holdings", cmd_holdings),

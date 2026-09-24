@@ -6,11 +6,13 @@
 # instead of fighting the new one over the same token.
 trap 'trap - TERM INT; kill 0' TERM INT
 
+# Health page first: on 0.1 CPU the checks take a minute, and Render wants the port open early.
+python -m app.health &
+
 # Check the settings, then build the tables once, up front. Two processes creating them
 # at the same moment can collide on Postgres; after this, their own init_db() is a no-op.
 python -m app.preflight || exit 1
 
-python -m app.health &
 python -m app.scheduler &
 python -m app.bot &
 wait -n

@@ -132,3 +132,96 @@ def test_dex_candles_parse_into_the_same_bar_shape():
 
 def test_rubbish_candles_are_skipped():
     assert levels.bars_from_ohlcv([[], None, ["x", "y"], [1758499200, 0, 0, 0, 0, 0]]) == []
+
+
+@pytest.mark.parametrize("status", [500, 502, 503])
+def test_a_spot_feed_outage_means_no_quote_this_run(monkeypatch, status):
+    """xaus.com answering 503 must be 'stale, skip' (one warning an hour), not a traceback."""
+    import asyncio
+    import httpx
+
+    async def outage(*args, **kwargs):
+        request = httpx.Request("GET", metals.SPOT_URL)
+        raise httpx.HTTPStatusError("down", request=request, response=httpx.Response(status, request=request))
+
+    monkeypatch.setattr(metals, "get_json", outage)
+    assert asyncio.run(metals.spot(None)) is None
+
+
+def test_a_network_failure_on_spot_also_means_no_quote(monkeypatch):
+    import asyncio
+    import httpx
+
+    async def unreachable(*args, **kwargs):
+        raise httpx.ConnectError("no route")
+
+    monkeypatch.setattr(metals, "get_json", unreachable)
+    assert asyncio.run(metals.spot(None)) is None
+
+
+# ---------------- Yahoo fallback when xaus.com is out of quota ----------------
+def yahoo_meta(price, age_sec, now=NOW):
+    return {"chart": {"result": [{"meta": {"regularMarketPrice": price,
+                                           "regularMarketTime": now.timestamp() - age_sec}}]}}
+
+
+def test_a_yahoo_price_reads_with_its_age():
+    assert metals.parse_yahoo_price(yahoo_meta(4325.9, 600), now=NOW) == (4325.9, 600)
+
+
+@pytest.mark.parametrize("broken", [{}, None, {"chart": {"result": []}}, yahoo_meta(None, 5), yahoo_meta(0, 5)])
+def test_a_broken_yahoo_price_is_refused(broken):
+    assert metals.parse_yahoo_price(broken, now=NOW) is None
+
+
+def fake_feeds(monkeypatch, prices):
+    """xaus.com out of quota; Yahoo answers from `prices` {symbol: (price, age)}."""
+    import httpx
+
+    async def get_json(c, url, throttle, **kwargs):
+        if "xaus.com" in url:
+            request = httpx.Request("GET", url)
+            raise httpx.HTTPStatusError("usage_exceeded", request=request,
+                                        response=httpx.Response(503, request=request))
+        symbol = url.rsplit("/", 1)[1]
+        if symbol not in prices:
+            raise httpx.ConnectError("down")
+        return yahoo_meta(*prices[symbol], now=datetime.now(timezone.utc))
+
+    monkeypatch.setattr(metals, "get_json", get_json)
+
+
+def test_spot_falls_back_to_yahoo_when_xaus_is_out_of_quota(monkeypatch):
+    import asyncio
+    fake_feeds(monkeypatch, {"GC=F": (4325.9, 600), "SI=F": (64.5, 600), "INR=X": (95.7, 2600)})
+    quote = asyncio.run(metals.spot(None))
+    assert quote["gold_usd_oz"] == 4325.9 and quote["silver_usd_oz"] == 64.5
+    assert quote["usd_inr"] == 95.7 and quote["source"] == "yahoo"
+
+
+def test_a_weekend_old_yahoo_gold_price_is_refused(monkeypatch):
+    import asyncio
+    fake_feeds(monkeypatch, {"GC=F": (4325.9, 2 * 86400), "INR=X": (95.7, 60)})
+    assert asyncio.run(metals.spot(None)) is None
+
+
+def test_silver_missing_on_yahoo_still_gives_gold(monkeypatch):
+    import asyncio
+    fake_feeds(monkeypatch, {"GC=F": (4325.9, 60), "INR=X": (95.7, 60)})
+    quote = asyncio.run(metals.spot(None))
+    assert quote["gold_usd_oz"] == 4325.9 and quote["silver_usd_oz"] is None
+
+
+def test_gold_history_falls_back_to_yahoo(monkeypatch):
+    import asyncio
+    import httpx
+
+    async def get_json(c, url, throttle, **kwargs):
+        if "xaus.com" in url:
+            raise httpx.ConnectError("down")
+        assert url.endswith("GC=F")
+        return fixture("yahoo_silver.json")
+
+    monkeypatch.setattr(metals, "get_json", get_json)
+    bars = asyncio.run(metals.gold_history(None))
+    assert bars and bars == metals.parse_yahoo(fixture("yahoo_silver.json"))

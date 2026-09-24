@@ -5,6 +5,8 @@ Yahoo's chart endpoint (unofficial, optional) backfills silver. Everything is pa
 a metals outage must never take the rest of the radar down with it."""
 from datetime import date, datetime, timedelta, timezone
 
+import httpx
+
 from .http import FX, XAUS, YF, get_json
 
 SPOT_URL = "https://xaus.com/api/v1/spot"
@@ -12,7 +14,13 @@ HISTORY_URL = "https://xaus.com/api/v1/history"
 FX_URL = "https://api.frankfurter.dev/v1/{start}..{end}"          # api.frankfurter.app redirects here
 YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 SILVER_SYMBOL = "SI=F"
+GOLD_SYMBOL = "GC=F"
+USD_INR_SYMBOL = "INR=X"
 MAX_SPOT_AGE_SEC = 600
+# Yahoo is the fallback when xaus.com runs out of keyless quota. Its quotes lag ~10 minutes,
+# so it gets a wider window; the rupee rate moves slowly and may be up to a day old.
+YAHOO_MAX_AGE_SEC = 1800
+YAHOO_FX_MAX_AGE_SEC = 86400
 BROWSER_UA = {"User-Agent": "Mozilla/5.0 (compatible; opportunity-radar/0.4; personal)"}
 
 
@@ -77,6 +85,19 @@ def parse_fx(payload: dict) -> dict[str, float]:
     return out
 
 
+def parse_yahoo_price(payload: dict, now=None) -> tuple[float, float] | None:
+    """(last price, age in seconds) from Yahoo's chart metadata, or None."""
+    try:
+        meta = (payload or {})["chart"]["result"][0]["meta"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    price, stamp = _number(meta.get("regularMarketPrice")), meta.get("regularMarketTime")
+    if not price or not isinstance(stamp, (int, float)):
+        return None
+    moment = datetime.fromtimestamp(stamp, timezone.utc)
+    return price, max(0.0, ((now or datetime.now(timezone.utc)) - moment).total_seconds())
+
+
 def parse_yahoo(payload: dict) -> list[dict]:
     """Daily bars from Yahoo's chart endpoint. Unofficial, so every field is treated as optional."""
     try:
@@ -123,13 +144,44 @@ def to_inr_bars(usd_bars: list[dict], fx_by_day: dict[str, float]) -> list[dict]
 
 # ---------------- fetching ----------------
 async def spot(c, currency: str = "INR") -> dict | None:
-    payload = await get_json(c, SPOT_URL, XAUS,
-                             params={"currency": currency, "unit": "gram", "compact": 1})
-    return parse_spot(payload)
+    """Live gold, silver and USD-INR: xaus.com first, Yahoo when it is down or out of quota.
+    None when neither has a fresh quote - the caller treats that as stale and skips the run."""
+    try:
+        payload = await get_json(c, SPOT_URL, XAUS,
+                                 params={"currency": currency, "unit": "gram", "compact": 1})
+    except httpx.HTTPError:
+        payload = None
+    return parse_spot(payload) or await yahoo_spot(c)
+
+
+async def _yahoo_price(c, symbol: str, max_age: float) -> float | None:
+    try:
+        payload = await get_json(c, YAHOO_URL.format(symbol=symbol), YF,
+                                 params={"range": "1d", "interval": "5m"}, headers=BROWSER_UA)
+    except httpx.HTTPError:
+        return None
+    found = parse_yahoo_price(payload)
+    return found[0] if found and found[1] <= max_age else None
+
+
+async def yahoo_spot(c) -> dict | None:
+    """COMEX front-month futures - the same series silver's history already comes from."""
+    gold = await _yahoo_price(c, GOLD_SYMBOL, YAHOO_MAX_AGE_SEC)
+    fx = await _yahoo_price(c, USD_INR_SYMBOL, YAHOO_FX_MAX_AGE_SEC) if gold else None
+    if not (gold and fx):
+        return None
+    silver = await _yahoo_price(c, SILVER_SYMBOL, YAHOO_MAX_AGE_SEC)
+    return {"gold_usd_oz": gold, "silver_usd_oz": silver, "usd_inr": fx,
+            "as_of": datetime.now(timezone.utc).isoformat(), "age_seconds": None, "source": "yahoo"}
 
 
 async def gold_history(c) -> list[dict]:
-    return parse_history(await get_json(c, HISTORY_URL, XAUS))
+    """xaus.com daily history, or Yahoo's gold futures when xaus.com is down or out of quota."""
+    try:
+        bars = parse_history(await get_json(c, HISTORY_URL, XAUS))
+    except httpx.HTTPError:
+        bars = []
+    return bars or await _yahoo_history(c, GOLD_SYMBOL)
 
 
 async def fx_history(c, start: date, end: date) -> dict[str, float]:
@@ -139,8 +191,12 @@ async def fx_history(c, start: date, end: date) -> dict[str, float]:
 
 async def silver_history(c, span: str = "2y") -> list[dict]:
     """Unofficial endpoint, gated by config. Returns [] on any problem."""
+    return await _yahoo_history(c, SILVER_SYMBOL, span)
+
+
+async def _yahoo_history(c, symbol: str, span: str = "2y") -> list[dict]:
     try:
-        payload = await get_json(c, YAHOO_URL.format(symbol=SILVER_SYMBOL), YF,
+        payload = await get_json(c, YAHOO_URL.format(symbol=symbol), YF,
                                  params={"range": span, "interval": "1d"}, headers=BROWSER_UA)
     except Exception:
         return []
