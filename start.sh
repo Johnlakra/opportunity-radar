@@ -6,9 +6,9 @@
 # instead of fighting the new one over the same token.
 trap 'trap - TERM INT; kill 0' TERM INT
 
-# Build the tables once, up front. Two processes creating them at the same moment can
-# collide on Postgres; after this, their own init_db() finds everything already there.
-python -c "from app.db import init_db; init_db()" || exit 1
+# Check the settings, then build the tables once, up front. Two processes creating them
+# at the same moment can collide on Postgres; after this, their own init_db() is a no-op.
+python -m app.preflight || exit 1
 
 python -m app.health &
 python -m app.scheduler &

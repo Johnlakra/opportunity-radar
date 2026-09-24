@@ -8,10 +8,12 @@ from . import prefs
 from .config import settings
 from .db import init_db
 from .orchestrator import build_agents, run_sync
+from .preflight import quiet_http_logs
 
 RESCHEDULE_EVERY_MIN = 15
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+quiet_http_logs()
 
 
 def main():

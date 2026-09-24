@@ -79,3 +79,12 @@ def test_no_guest_configured_changes_nothing():
 def test_a_stranger_is_refused_by_both_doors():
     s = settings_with("111", metals="222")
     assert not s.may_use("333") and not s.may_see_metals("333")
+
+
+def test_a_stray_full_stop_or_quote_is_forgiven():
+    """A pasted id like 8768941365. or "8768941365" must not lock the owner out."""
+    assert settings_with('8768941365., "222"').chat_ids == ["8768941365", "222"]
+
+
+def test_a_group_id_keeps_its_minus_sign():
+    assert settings_with("-1001234567890").chat_ids == ["-1001234567890"]

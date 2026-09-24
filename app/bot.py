@@ -22,10 +22,12 @@ from .notifier import esc
 from .text import price as fmt_price
 from .orchestrator import build_agents, run_agent
 from .redis_client import r
+from .preflight import quiet_http_logs
 from . import levels_bot
 from .ux import flows, menu, news, router, settings as settings_ux  # noqa: F401 (menu registration)
 
 logging.basicConfig(level=logging.INFO)
+quiet_http_logs()
 HELP = """<b>Opportunity Radar</b>
 <b>Easiest way:</b> /menu, or just type a coin name — I find the address for you.
 /mood – is this a good time to buy? · /find &lt;name&gt; – check any coin

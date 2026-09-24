@@ -24,7 +24,9 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _ids(raw: str) -> list[str]:
-        return [part.strip() for part in str(raw or "").split(",") if part.strip()]
+        """Forgives what a paste drags along: spaces, a trailing full stop, quotes."""
+        parts = (part.strip().strip(".'\"").strip() for part in str(raw or "").split(","))
+        return [part for part in parts if part]
 
     @property
     def chat_ids(self) -> list[str]:
