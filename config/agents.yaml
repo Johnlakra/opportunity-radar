@@ -17,21 +17,24 @@ agents:
     type: news
     topic: ai
     label: "AI"
-    every_min: 45
+    every_min: 15                 # only new, pre-filtered stories reach Gemini, so this stays cheap
     score_threshold: 7
+    max_age_hours: 24             # older than this when first seen = stale, dropped before scoring
   news_crypto:
     type: news
     topic: crypto_news
     label: "Crypto"
-    every_min: 45
+    every_min: 15
     score_threshold: 7
+    max_age_hours: 12
   news_airdrops:
     type: news
     topic: airdrops
     label: "Airdrops"
-    every_min: 90
+    every_min: 60
     score_threshold: 7
     priority_boost: 3
+    max_age_hours: 72             # airdrop posts stay actionable for days
   majors:                       # discounted top-200 coins, only when the regime allows buying
     type: majors
     every_min: 720
@@ -45,6 +48,13 @@ agents:
     # app/crypto/chains.py). Each extra chain costs ~2 GeckoTerminal calls per run.
     chains: [solana, base, ethereum, bsc, arbitrum]
     shadow_mode: true           # log verdicts only; set false after ~4 weeks if /more shows it's useful
+  bulletin:                     # hourly roundup of the best waiting news, one message per topic
+    type: bulletin
+    every_min: 60
+    active_hours: [7, 23]       # your timezone; outside these it waits (instant pings still go out)
+    per_topic: 5
+    min_priority: 65            # starting bar; it rises when the day runs busy, eases when quiet
+    target_per_day: 30
   curator:                      # daily digest: top items across ALL agents, max 2 per topic
     type: curator
     cron_hour: 9

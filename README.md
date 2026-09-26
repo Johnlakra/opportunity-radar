@@ -215,7 +215,7 @@ your comments and formatting stay exactly as you wrote them.
 **Every original command still works:**
 `/digest` `/regime` `/check <chain> <address>` `/watch <chain> <address>`
 `/hold cg <coingecko-id> <usd>` (e.g. `/hold cg solana 100`) · `/hold <chain> <address> <usd>`
-`/holdings` `/sell <n>` (the number shown in the journal) `/mute <topic>` `/unmute <topic>` `/more` (what got filtered) `/agents` `/run <agent>`
+`/holdings` `/sell <n>` (the number shown in the journal) `/mute <topic>` `/unmute <topic>` `/more` (what got filtered) `/stats` (today's counts + Gemini budget) `/chatid` (any chat: shows its id) `/agents` `/run <agent>`
 Buttons: 👍/👎 teach the scorer · 👀 Watch / 🗑 Ignore on tokens.
 
 ## Chains

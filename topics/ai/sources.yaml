@@ -6,8 +6,12 @@ rss:
   - {name: "OpenAI", url: "https://openai.com/news/rss.xml"}
   - {name: "Hugging Face", url: "https://huggingface.co/blog/feed.xml"}
   - {name: "Google DeepMind", url: "https://deepmind.google/blog/feed/basic/"}
-  - {name: "BetaList", url: "https://betalist.com/feed"}
-  - {name: "r/LocalLLaMA", url: "https://www.reddit.com/r/LocalLLaMA/new.rss"}
+  - {name: "Google AI blog", url: "https://blog.google/technology/ai/rss/"}
+  - {name: "TechCrunch AI", url: "https://techcrunch.com/category/artificial-intelligence/feed/"}
+  - {name: "The Verge AI", url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"}
+  - {name: "HN AI (40+ points)", url: "https://hnrss.org/newest?q=AI+OR+LLM+OR+GPT+OR+Claude+OR+Gemini&points=40"}
+  - {name: "BetaList", url: "https://feeds.feedburner.com/BetaList"}
+  - {name: "r/LocalLLaMA", url: "https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day"}
 google_news:
   - {name: "AI waitlists", q: "AI \"waitlist\" OR \"early access\" launch"}
   - {name: "Anthropic", q: "Anthropic Claude launch"}

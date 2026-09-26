@@ -19,6 +19,7 @@ MIGRATIONS: dict[str, dict[str, str]] = {
         "deadline_at": "TIMESTAMP",
         "india_ok": "VARCHAR",
         "cost": "VARCHAR",
+        "also_sources": "VARCHAR DEFAULT ''",
     },
     "feedback": {
         "source": "VARCHAR",

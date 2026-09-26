@@ -7,14 +7,18 @@ only the cream to one Telegram bot. ALERT-ONLY: it never signs up, trades, swaps
 |---|---|---|---|
 | regime | BTC regime from the cheat sheet + dominance; alerts on flips | 4h | no |
 | guardian | Your journaled holdings: take-profit levels, community loss, drawdowns | 30m | no |
-| news_ai / news_crypto / news_airdrops | collect → dedupe → batch score → research top few → submit | 45–90m | yes (Gemini) |
+| news_ai / news_crypto / news_airdrops | collect → dedupe → spam/stale prefilter → cluster same story → batch score (keyword fallback) → research top few → submit (unresearched if research fails) | 15–60m | yes (Gemini) |
+| bulletin | Hourly roundup of the best waiting news per topic, active hours only; adaptive bar (app/bulletin_rules.py) | 60m | no |
 | majors | Discounted top-200 coins, only when regime allows buying | 12h | no |
 | token_scout | DEX tokens through the course checklist, scout-tier chains only (shadow mode by default) | 2h | no |
 | curator | Daily summary: top N across ALL agents, max 2/topic, rest dropped; weekly learning on Sundays | 09:00 IST (settable) | no |
 | reminders | Sends the ⏰ reminders you set, once each, at priority 95 | 10m | no |
 | bot (app/bot.py) | Telegram menu, name search, buttons, commands | always on | no |
 All agents submit to app/cream.py (the cream gate): priority ≥85 may ping now (max 3/day; ≥95 =
-holding protection, always delivered), everything else competes for the digest.
+holding protection, always delivered); queued news above the bulletin bar goes out hourly; the rest
+competes for the digest. Gemini calls are budgeted per UTC day in Redis (`score:`/`research:` keys).
+Pre-LLM filtering lives in app/story.py (pure). Dedupe is one MGET per run - keep Redis command counts
+low (Upstash free tier). On Render, app/health.py self-pings RENDER_EXTERNAL_URL so the service never sleeps.
 
 ## Build agents (.claude/agents/) — cheapest capable model per job
 | Task | Agent | Model (frontmatter alias → resolves to) |

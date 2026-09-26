@@ -7,6 +7,7 @@ from ..text import esc
 
 NOT_ADVICE = "<i>I only ever read and report. I never sign up, claim or pay for you.</i>"
 TOPIC_ICON = {"ai": "🤖", "crypto_news": "🪙", "airdrops": "🎁"}
+BULLETIN_TEXT_MAX = 200             # five stories must fit one Telegram message
 INDIA = {"available": "yes", "restricted": "no", "unknown": "not sure"}
 _MONTHS = ("jan feb mar apr may jun jul aug sep oct nov dec").split()
 _DATE_PATTERNS = [
@@ -105,7 +106,7 @@ def news_card(row, label: str, now: datetime | None = None) -> str:
         lines.append(" · ".join(facts))
 
     if row.source:
-        lines.append(f"Source: {esc(row.source)}")
+        lines.append(f"Source: {esc(row.source)}{also_line(getattr(row, 'also_sources', ''))}")
     legitimacy = str(info.get("legitimacy", "")).lower()
     if legitimacy and legitimacy != "confirmed":
         lines.append(f"⚠️ Not confirmed yet — {esc(info.get('evidence') or 'no official source found')}")
@@ -156,3 +157,49 @@ def esc_first_line(html_text: str, limit: int = 120) -> str:
     """The headline of an already-rendered card, with its tags stripped."""
     plain = re.sub(r"<[^>]+>", "", (html_text or "").split("\n")[0])
     return esc(plain.strip()[:limit])
+
+
+def also_sources(raw: str) -> list[str]:
+    return [s.strip() for s in (raw or "").split(",") if s.strip()]
+
+
+def also_line(raw: str) -> str:
+    """" (+2 more sources: Decrypt, The Block)" - many outlets running a story is a signal."""
+    names = also_sources(raw)
+    if not names:
+        return ""
+    more = "source" if len(names) == 1 else "sources"
+    return f" <i>(+{len(names)} more {more}: {esc(', '.join(names[:3]))})</i>"
+
+
+def bulletin(label: str, topic: str, rows: list, bar: int | None = None) -> str:
+    """The hourly roundup for one topic: numbered, one or two lines each, a link to open."""
+    lines = [f"{icon(topic)} <b>{esc(label)} · this hour</b>"]
+    for n, row in enumerate(rows, 1):
+        link = getattr(row, "action_link", None) or row.url
+        lines.append("")
+        lines.append(f"{n}. <b>{esc(row.title[:BULLETIN_TEXT_MAX])}</b>"
+                     f"{also_line(getattr(row, 'also_sources', ''))}")
+        if row.why:
+            lines.append(f"   {esc(row.why[:BULLETIN_TEXT_MAX])}")
+        lines.append(f'   <a href="{esc(link)}">Open</a> · {esc(row.source)}')
+    if bar is not None:
+        lines.append(f"\n<i>Bar this hour: {bar}/100 · tap a number to rate it</i>")
+    return "\n".join(lines)
+
+
+STATS_MODES = {"urgent": "pinged now", "bulletin": "in bulletins", "digest": "in the digest",
+               "": "waiting", "dropped": "filtered out"}
+
+
+def stats_card(counts: dict[str, int], bar: int | None, target: int | None,
+               budgets: dict[str, tuple[int, int]]) -> str:
+    """/stats: today's alerts by how they went out, the bulletin bar, and Gemini calls used."""
+    lines = ["<b>📊 Today so far</b>"]
+    shown = [f"{counts[mode]} {label}" for mode, label in STATS_MODES.items() if counts.get(mode)]
+    lines.append(" · ".join(shown) if shown else "Nothing yet today.")
+    if bar is not None:
+        lines.append(f"Bulletin bar right now: {bar}/100 (aiming for about {target} items a day)")
+    for name, (used, cap) in budgets.items():
+        lines.append(f"Gemini {esc(name)}: {min(used, cap)}/{cap} calls used")
+    return "\n".join(lines)

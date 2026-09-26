@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes,
                           MessageHandler, filters)
 
-from . import cream, stale_buttons
+from . import cream, news_stats, stale_buttons
 from .agents.curator import CuratorAgent
 from .agents.token_scout import TokenScoutAgent
 from .config import settings
@@ -43,7 +43,8 @@ HELP = """<b>Opportunity Radar</b>
 /holdings · /sell &lt;id&gt;
 /alerts – level alerts for gold, silver and any coin (buttons)
 /levels &lt;asset&gt; – previous week/month/quarter/year high and low
-/mute &lt;topic&gt; · /unmute &lt;topic&gt; · /more · /agents
+/stats – today's news counts and Gemini budget left
+/mute &lt;topic&gt; · /unmute &lt;topic&gt; · /more · /agents · /chatid
 Chains I can check fully: """ + ", ".join(SCOUT_CHAINS) + f"""
 Chains I can look up (price, journal, alerts - no safety report yet): {", ".join(LOOKUP_ONLY)}"""
 
@@ -215,6 +216,35 @@ async def cmd_more(update, ctx):
     await reply(update, "\n".join(lines))
 
 
+async def cmd_stats(update, ctx):
+    if mine(update):
+        await reply(update, news_stats.today_text())
+
+
+async def cmd_chatid(update, ctx):
+    """Answers ANY chat with its own id, so a new person (or group) can tell you what to add.
+    It reveals nothing but the id of the chat that asked."""
+    chat_id = str(update.effective_chat.id)
+    if settings.may_use(chat_id):
+        role = "full access"
+    elif settings.may_see_metals(chat_id):
+        role = "gold and silver alerts"
+    else:
+        role = "not registered yet - add this id to TELEGRAM_CHAT_ID or TELEGRAM_METALS_CHAT_ID"
+    await update.effective_message.reply_text(f"This chat's id is {chat_id} ({role}).")
+
+
+def without_vote_buttons(markup, item_id: str):
+    """After a vote, remove only that story's 👍/👎 - an hourly bulletin carries five stories."""
+    from telegram import InlineKeyboardMarkup
+    if markup is None:
+        return None
+    votes = {f"v:up:{item_id}", f"v:dn:{item_id}"}
+    rows = [[b for b in row if b.callback_data not in votes] for row in markup.inline_keyboard]
+    rows = [row for row in rows if row]
+    return InlineKeyboardMarkup(rows) if rows else None
+
+
 async def cmd_agents(update, ctx):
     if not mine(update):
         return
@@ -256,15 +286,20 @@ async def on_button(update: Update, ctx):
         _, vote, item_id = data.split(":", 2)
         record_item_vote(int(item_id), "up" if vote == "up" else "down")
         await q.answer("Saved — the scorer learns from this.")
+        await _tidy_votes(q, item_id)
     elif data.startswith(("w:", "x:")):
         set_status(data[2:], "watch" if data[0] == "w" else "ignore")
         await q.answer("Watching" if data[0] == "w" else "Ignored")
     else:
         await q.answer()
+
+
+async def _tidy_votes(q, item_id: str):
     try:
-        await q.edit_message_reply_markup(reply_markup=None) if data.startswith("v:") else None
-    except Exception:
-        pass
+        await q.edit_message_reply_markup(
+            reply_markup=without_vote_buttons(q.message.reply_markup if q.message else None, item_id))
+    except Exception as exc:                 # message too old to edit, or unchanged - harmless
+        logging.info("could not tidy vote buttons: %s", exc)
 
 
 def main():
@@ -274,7 +309,7 @@ def main():
     for name, fn in [("start", cmd_menu), ("help", cmd_help), ("regime", cmd_regime), ("digest", cmd_digest),
                      ("check", cmd_check), ("watch", cmd_watch), ("hold", cmd_hold), ("holdings", cmd_holdings),
                      ("sell", cmd_sell), ("mute", cmd_mute), ("unmute", cmd_unmute), ("more", cmd_more),
-                     ("agents", cmd_agents), ("run", cmd_run),
+                     ("agents", cmd_agents), ("run", cmd_run), ("stats", cmd_stats),
                      ("menu", cmd_menu), ("mood", owner_only(flows.cmd_mood)),
                      ("find", owner_only(flows.cmd_find)), ("journal", owner_only(flows.cmd_journal)),
                      ("watchlist", owner_only(flows.cmd_watchlist)),
@@ -283,6 +318,7 @@ def main():
                      ("today", owner_only(news.cmd_today)), ("saved", owner_only(news.cmd_saved)),
                      ("health", owner_only(news.cmd_health))]:
         app.add_handler(CommandHandler(name, fn))
+    app.add_handler(CommandHandler("chatid", cmd_chatid))
     app.add_handler(CommandHandler("alerts", levels_bot.cmd_alerts))
     app.add_handler(CommandHandler("levels", levels_bot.cmd_levels))
     app.add_handler(CallbackQueryHandler(levels_bot.on_button, pattern=r"^lv:"))

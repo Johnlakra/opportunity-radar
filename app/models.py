@@ -34,6 +34,7 @@ class Item(SQLModel, table=True):
     deadline_at: Optional[datetime] = None
     india_ok: Optional[str] = None   # available | restricted | unknown
     cost: Optional[str] = None       # free | paid | credits
+    also_sources: str = ""           # other feeds that ran the same story, comma-separated
 
 
 class Alert(SQLModel, table=True):

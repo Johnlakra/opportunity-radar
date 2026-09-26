@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from .agents.bulletin import BulletinAgent
 from .agents.curator import CuratorAgent
 from .agents.guardian import GuardianAgent
 from .agents.level_watch import LevelWatchAgent
@@ -22,7 +23,9 @@ from .redis_client import r
 log = logging.getLogger(__name__)
 TYPES = {"news": NewsAgent, "regime": RegimeAgent, "token_scout": TokenScoutAgent,
          "majors": MajorsAgent, "guardian": GuardianAgent, "curator": CuratorAgent,
-         "reminders": RemindersAgent, "level_watch": LevelWatchAgent}
+         "reminders": RemindersAgent, "level_watch": LevelWatchAgent, "bulletin": BulletinAgent}
+LOCK_PREFIX = "lock:agent:"
+LOCK_SECONDS = 3 * 3600
 
 
 def load_config() -> dict:
@@ -38,8 +41,8 @@ def build_agents() -> dict:
 
 
 async def run_agent(name: str, agent) -> str:
-    lock = f"lock:agent:{name}"
-    if not r.set(lock, 1, nx=True, ex=3 * 3600):
+    lock = f"{LOCK_PREFIX}{name}"
+    if not r.set(lock, 1, nx=True, ex=LOCK_SECONDS):
         return "skipped (already running)"
     started = datetime.now(timezone.utc)
     try:
@@ -53,6 +56,14 @@ async def run_agent(name: str, agent) -> str:
     secs = (datetime.now(timezone.utc) - started).total_seconds()
     r.hset("agents:status", name, f"{started:%Y-%m-%d %H:%M} UTC · {status} · {secs:.0f}s")
     return status
+
+
+def clear_stale_locks(names) -> int:
+    """A container killed mid-run (every redeploy/restart) leaves its locks in Redis for 3 hours,
+    and the agent is skipped as "already running" until they expire. Only one scheduler exists,
+    so at its boot no run can really be in progress - clear them."""
+    keys = [f"{LOCK_PREFIX}{name}" for name in names]
+    return int(r.delete(*keys)) if keys else 0
 
 
 def run_sync(name: str, agent):

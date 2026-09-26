@@ -12,13 +12,23 @@ from .text import as_data
 
 log = logging.getLogger(__name__)
 _client = None
+REQUEST_TIMEOUT_MS = 60_000      # a hung call must never stall an agent's whole run
+RETRY_WAIT_SECONDS = 30
+# Google words a used-up DAILY free quota like this. Waiting 30s cannot fix it - fail fast.
+_DAILY_QUOTA = re.compile(r"(?i)per ?day|RequestsPerDay|daily")
 
 
 def _c():
     global _client
     if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
+        _client = genai.Client(api_key=settings.gemini_api_key,
+                               http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS))
     return _client
+
+
+def is_daily_quota(exc: BaseException) -> bool:
+    text = str(exc)
+    return ("429" in text or "RESOURCE_EXHAUSTED" in text) and bool(_DAILY_QUOTA.search(text))
 
 
 def extract_json(text):
@@ -45,10 +55,11 @@ def _generate(model, contents, config, retries=2):
         try:
             return _c().models.generate_content(model=model, contents=contents, config=config)
         except Exception as exc:  # 429 / transient
-            if attempt == retries:
+            if attempt == retries or is_daily_quota(exc):
                 raise
-            log.warning("Gemini error (%s), retrying in 30s", exc)
-            time.sleep(30)
+            log.warning("Gemini error on %s (%s), retrying in %ss", model, str(exc)[:200],
+                        RETRY_WAIT_SECONDS)
+            time.sleep(RETRY_WAIT_SECONDS)
 
 
 def score_batch(label: str, profile: str, fewshot: str, items: list[dict], me: str = "") -> list[dict]:
@@ -83,10 +94,19 @@ ITEMS:
 
 
 def research(prompt: str) -> dict:
-    """One grounded call with Google Search. Returns parsed JSON + source URLs."""
+    """One grounded call with Google Search. Returns parsed JSON + source URLs.
+    If the research model is out of quota or down, the (cheaper, higher-quota) score model tries."""
     tool = types.Tool(google_search=types.GoogleSearch())
-    resp = _generate(settings.gemini_research_model, prompt,
-                     types.GenerateContentConfig(tools=[tool], temperature=0.2))
+    config = types.GenerateContentConfig(tools=[tool], temperature=0.2)
+    models = list(dict.fromkeys([settings.gemini_research_model, settings.gemini_score_model]))
+    for i, model in enumerate(models):
+        try:
+            resp = _generate(model, prompt, config, retries=0 if i < len(models) - 1 else 1)
+            break
+        except Exception as exc:
+            if i == len(models) - 1:
+                raise
+            log.warning("research model %s failed (%s); trying %s", model, str(exc)[:200], models[i + 1])
     data = extract_json(resp.text)
     if not isinstance(data, dict):
         data = {"what_to_do": (resp.text or "")[:500], "legitimacy": "unconfirmed"}

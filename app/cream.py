@@ -1,7 +1,8 @@
 """The cream gate. Every topic submits candidate alerts here; only the best get through.
 
   priority >= URGENT_MIN and daily urgent budget left  -> sent now
-  otherwise queued -> the daily digest sends the top N across ALL topics (max per topic)
+  otherwise queued -> the hourly bulletin takes the best news (app/agents/bulletin.py), then
+                      the daily digest sends the top N of the rest across ALL topics
   everything else is stored (see /more) but never pushed.
 Holding-protection alerts (take-profit, exits, regime flips) use priority >= 90."""
 import json
@@ -101,6 +102,15 @@ def pick_digest(total: int, per_topic: int, min_priority: int = 60) -> list[Aler
         if len(chosen) >= total:
             break
     return chosen
+
+
+def queued(topics: set[str], hours: int) -> list[Alert]:
+    """Still-waiting alerts from these topics, best first - what the hourly bulletin draws on."""
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    with session() as s:
+        return list(s.exec(select(Alert).where(Alert.sent_mode == "", Alert.created_at >= since,
+                                               Alert.topic.in_(topics))
+                           .order_by(Alert.priority.desc())).all())
 
 
 def close_out_queue():

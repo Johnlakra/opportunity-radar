@@ -6,7 +6,8 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = ""
     gemini_score_model: str = "gemini-flash-lite-latest"
-    gemini_research_model: str = "gemini-flash-latest"
+    # Flash-Lite: ~500 free calls/day. Plain Flash allows only ~20, which starved news research.
+    gemini_research_model: str = "gemini-flash-lite-latest"
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""         # full access. one id, or several separated by commas
     telegram_metals_chat_id: str = ""  # gold and silver alerts only, nothing else
@@ -16,6 +17,7 @@ class Settings(BaseSettings):
     digest_total: int = 6
     digest_per_topic: int = 2
     research_daily_cap: int = 40
+    score_daily_cap: int = 300        # Gemini scoring calls/day; past it, a keyword guess keeps news flowing
     coingecko_api_key: str = ""       # free "demo" key from coingecko.com (recommended)
     fetch_interval_min: int = 45
     scout_interval_min: int = 120

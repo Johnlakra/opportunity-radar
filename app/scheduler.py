@@ -7,7 +7,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from . import prefs
 from .config import settings
 from .db import init_db
-from .orchestrator import build_agents, run_sync
+from .orchestrator import build_agents, clear_stale_locks, run_sync
 from .preflight import quiet_http_logs
 
 RESCHEDULE_EVERY_MIN = 15
@@ -18,8 +18,12 @@ quiet_http_logs()
 
 def main():
     init_db()
+    agents = build_agents()
+    cleared = clear_stale_locks(agents)
+    if cleared:
+        logging.info("cleared %d agent lock(s) left by the previous container", cleared)
     sched = BlockingScheduler(timezone=settings.timezone)
-    for i, (name, (agent, cfg)) in enumerate(build_agents().items()):
+    for i, (name, (agent, cfg)) in enumerate(agents.items()):
         common = dict(args=[name, agent], id=name, max_instances=1, coalesce=True)
         if "cron_hour" in cfg:
             hour = prefs.digest_hour(cfg["cron_hour"]) if cfg.get("type") == "curator" else cfg["cron_hour"]

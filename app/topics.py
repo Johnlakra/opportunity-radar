@@ -13,11 +13,12 @@ FALLBACK_LABELS = {
     "majors": "Discounted big coins",
     "token_scout": "New coin finds",
     "curator": "Daily summary",
+    "bulletin": "Hourly bulletin",
     "reminders": "Reminders",
 }
-# The curator does not submit to the cream gate - it IS the digest - so muting or filtering
+# The curator and bulletin do not submit to the cream gate - they ARE the delivery - so muting or filtering
 # by it would do nothing. Keep it out of the buttons that imply otherwise.
-NEVER_SUBMITS = {"curator"}
+NEVER_SUBMITS = {"curator", "bulletin"}
 ALWAYS_ON = {"guardian"}            # protects money you hold; muting it would be a foot-gun
 
 

@@ -1,9 +1,18 @@
+import html
 import logging
+import re
+
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
 from .text import esc                      # re-exported: callers still do `from .notifier import esc`
 
 log = logging.getLogger(__name__)
+MAX_TEXT = 4000
+_TAG = re.compile(r"<[^>]+>")
+# What Telegram's refusals mean in practice - so the log says what to fix, not just "Forbidden".
+HINTS = {"forbidden": "that person must open the bot and press Start (or add the bot to the group)",
+         "chat not found": "the chat id is wrong - send /start to the bot from that chat to see its id",
+         "can't parse entities": "sent again as plain text"}
 
 __all__ = ["esc", "btn", "send"]
 
@@ -30,7 +39,23 @@ async def send(text: str, rows: list[list] | None = None, chat_ids: list[str] | 
     async with Bot(settings.telegram_bot_token) as bot:
         for chat_id in targets:
             try:
-                await bot.send_message(chat_id=chat_id, text=text[:4000], parse_mode="HTML",
+                await bot.send_message(chat_id=chat_id, text=text[:MAX_TEXT], parse_mode="HTML",
                                        reply_markup=markup, disable_web_page_preview=True)
             except Exception as exc:
-                log.warning("could not reach chat %s: %s", chat_id, exc)
+                log.warning("could not reach chat %s: %s%s", chat_id, exc, hint(exc))
+                if "can't parse entities" in str(exc).lower():
+                    await _send_plain(bot, chat_id, text, markup)
+
+
+def hint(exc: BaseException) -> str:
+    text = str(exc).lower()
+    return next((f" ({advice})" for marker, advice in HINTS.items() if marker in text), "")
+
+
+async def _send_plain(bot, chat_id, text: str, markup):
+    """A cut-off or odd tag must not cost you the message: strip the formatting and send it."""
+    try:
+        await bot.send_message(chat_id=chat_id, text=html.unescape(_TAG.sub("", text))[:MAX_TEXT],
+                               reply_markup=markup, disable_web_page_preview=True)
+    except Exception as exc:
+        log.warning("plain-text retry to chat %s failed too: %s", chat_id, exc)
