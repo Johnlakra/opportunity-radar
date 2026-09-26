@@ -257,4 +257,4 @@ menu.register("watch", "⭐ Watchlist", cmd_watchlist, order=35,
 menu.register("journal", "📒 Journal", cmd_journal, order=40,
               command="journal", description="Your coins, live profit")
 menu.register("help", "❓ Help", cmd_glossary, order=95,
-              command="help", description="Plain English help")
+              command="help", description="Every command, and the glossary")

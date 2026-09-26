@@ -42,6 +42,9 @@ async def route(update, ctx) -> bool:
         await news.mute_category(update, item_id or 0, extra == "y")
     elif action == "tell" and item_id:
         await news.tell_me_more(update, item_id)
+    elif action == "stats":
+        await query.answer()
+        await news.show_stats(update)
     elif action == "run" and arg:
         await query.answer()
         await news.run_agent_now(update, arg)

@@ -97,7 +97,13 @@ async def cmd_health(update, ctx):
     muted = prefs.muted_topics()
     if muted:
         lines.append("Muted: " + esc(", ".join(sorted(topics.label_for_channel(m) for m in muted))))
+    rows.append([InlineKeyboardButton("📊 Today's stats", callback_data="n:stats")])
     await say(update, "\n".join(lines), keyboard(rows))
+
+
+async def show_stats(update):
+    from ..news_stats import today_text
+    await say(update, today_text())
 
 
 async def run_agent_now(update, agent_name: str):

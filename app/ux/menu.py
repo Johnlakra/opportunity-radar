@@ -46,6 +46,31 @@ def commands() -> list[tuple[str, str]]:
     return out
 
 
+# A gold-and-silver-only chat sees just what answers it - the full list would all be silent there.
+METALS_COMMANDS = [("start", "Your gold and silver alerts"),
+                   ("alerts", "Gold and silver level alerts"),
+                   ("levels", "Previous week/month/quarter/year high and low, e.g. /levels gold"),
+                   ("chatid", "Show this chat's id")]
+
+
+def _chat_number(chat_id: str) -> int | None:
+    try:
+        return int(chat_id)
+    except ValueError:
+        log.warning("a chat id setting has a non-numeric entry: %r", chat_id)
+        return None
+
+
+async def _setup_metals_chats(app) -> None:
+    commands_list = [BotCommand(name, desc) for name, desc in METALS_COMMANDS]
+    for chat in filter(None, map(_chat_number, settings.metals_chat_ids)):
+        try:
+            await app.bot.set_my_commands(commands_list, scope=BotCommandScopeChat(chat))
+            await app.bot.set_chat_menu_button(chat_id=chat, menu_button=MenuButtonCommands())
+        except Exception as exc:            # usually: that person has not pressed Start yet
+            log.warning("could not set the menu for metals chat %s: %s", chat, exc)
+
+
 def menu_text() -> str:
     return ("<b>Opportunity Radar</b>\n"
             "Tap a button, or just tell me what you want in your own words.\n"
@@ -65,5 +90,6 @@ async def setup(app) -> None:
                 continue
             await app.bot.set_my_commands(commands_list, scope=BotCommandScopeChat(chat))
             await app.bot.set_chat_menu_button(chat_id=chat, menu_button=MenuButtonCommands())
+        await _setup_metals_chats(app)
     except Exception:                       # a menu that failed to register must not stop the bot
         log.warning("could not register the Telegram menu", exc_info=True)

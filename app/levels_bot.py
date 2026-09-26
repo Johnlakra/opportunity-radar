@@ -13,7 +13,7 @@ from .crypto.http import CG, client, get_json
 from .crypto.regime import CGB, _headers
 from .redis_client import r
 from .text import esc
-from .ux import level_cards
+from .ux import level_cards, menu
 
 log = logging.getLogger(__name__)
 PAUSED_KEY = "lv:paused:{}"     # paused is per person, like everything else here
@@ -331,3 +331,14 @@ async def toggle(update: Update, sub, what: str):
     else:
         return await query.answer()
     await show_panel(update, sub.id)
+
+
+async def open_from_menu(update: Update, ctx):
+    """🔔 Level Alerts in the main menu - same screen as /alerts."""
+    if may_level(update):
+        ensure_metals(caller(update))
+        await show_menu(update)
+
+
+menu.register("levels", "🔔 Level Alerts", open_from_menu, order=50,
+              command="alerts", description="Gold, silver and coin level alerts")

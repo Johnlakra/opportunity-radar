@@ -45,6 +45,7 @@ HELP = """<b>Opportunity Radar</b>
 /levels &lt;asset&gt; – previous week/month/quarter/year high and low
 /stats – today's news counts and Gemini budget left
 /mute &lt;topic&gt; · /unmute &lt;topic&gt; · /more · /agents · /chatid
+/glossary – plain-English meaning of every term
 Chains I can check fully: """ + ", ".join(SCOUT_CHAINS) + f"""
 Chains I can look up (price, journal, alerts - no safety report yet): {", ".join(LOOKUP_ONLY)}"""
 
@@ -76,9 +77,13 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """The 7-button menu - the front door for everything below."""
-    if mine(update):
-        await flows.cmd_menu(update, ctx)
+    """The main menu - the front door for everything below. A gold-and-silver-only chat gets
+    its own front door instead of silence: its level alerts screen."""
+    if settings.may_use(update.effective_chat.id):
+        return await flows.cmd_menu(update, ctx)
+    if settings.may_see_metals(update.effective_chat.id):
+        return await levels_bot.open_from_menu(update, ctx)
+    mine(update)                             # logs the unknown chat id
 
 
 async def cmd_regime(update, ctx):
