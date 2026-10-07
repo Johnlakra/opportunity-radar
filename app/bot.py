@@ -13,7 +13,7 @@ from .agents.token_scout import TokenScoutAgent
 from .config import settings
 from .crypto import coingecko, dexscreener as dx, regime
 from .crypto.chains import CHAINS, LOOKUP_ONLY, SCOUT_CHAINS, coin_key, has_security, is_address, norm
-from .crypto.http import client
+from .crypto.http import RateLimited, client
 from .db import init_db, session
 from .feedback import record_item_vote
 from .journal import holding_at, holdings_in_order, set_status
@@ -141,8 +141,11 @@ async def cmd_hold(update, ctx):
                         entry_value=entry_price, entry_price=entry_price, usd=float(a[2]))
         elif len(a) == 3 and a[0] in CHAINS and is_address(a[1]):
             chain, addr = a[0], norm(a[0], a[1])
-            async with client() as c:
-                pair = dx.best_pairs(chain, await dx.pairs_for(c, chain, [addr])).get(addr)
+            try:
+                async with client() as c:
+                    pair = dx.best_pairs(chain, await dx.pairs_for(c, chain, [addr])).get(addr)
+            except RateLimited:
+                return await reply(update, "DexScreener is busy right now — please try again in a few minutes.")
             if not pair:
                 return await reply(update, "No pair found for that token.")
             b = dx.basics(pair)

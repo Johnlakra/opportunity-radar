@@ -10,7 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from ..agents.token_scout import TokenScoutAgent
 from ..crypto import dexscreener as dx, fng, regime, resolve
 from ..crypto.chains import CHAINS, has_security
-from ..crypto.http import client
+from ..crypto.http import RateLimited, client
 from ..journal import add_dex_holding, watchlist
 from ..redis_client import r
 from ..text import esc, money, price
@@ -212,8 +212,11 @@ async def save_amount(update, text: str):
     if chain not in CHAINS or not address:
         clear_state(chat_id)
         return await say(update, "I lost track of that coin — please search for it again.")
-    async with client() as c:
-        pair = dx.best_pairs(chain, await dx.pairs_for(c, chain, [address])).get(address)
+    try:
+        async with client() as c:
+            pair = dx.best_pairs(chain, await dx.pairs_for(c, chain, [address])).get(address)
+    except RateLimited:
+        return await say(update, "DexScreener is busy right now — please try again in a few minutes. Send the amount again then.")
     if not pair:
         clear_state(chat_id)
         return await say(update, "That token has no tradeable pair right now, so I can't record an entry.")

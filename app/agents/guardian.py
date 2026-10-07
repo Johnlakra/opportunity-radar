@@ -2,6 +2,7 @@
 - take-profit multiples reached (course: take profits in parts)          -> priority 96 (always delivered)
 - DEX token's website/Telegram disappeared (course: exit when community leaves) -> priority 96
 - down >= X% from entry: reports whether the community is intact (informational) -> priority 72"""
+import logging
 from datetime import datetime, timezone
 
 from sqlmodel import select
@@ -15,6 +16,7 @@ from ..notifier import esc
 from ..text import price as fmt_price
 from ..redis_client import r
 
+log = logging.getLogger(__name__)
 
 class GuardianAgent:
     kind = "guardian"
@@ -40,7 +42,12 @@ class GuardianAgent:
                     await self.check(h, prices.get(h.ref), None)
                 else:
                     chain, addr = h.ref.split(":", 1)
-                    pair = dx.best_pairs(chain, await dx.pairs_for(c, chain, [addr])).get(addr)
+                    try:
+                        pair = dx.best_pairs(chain, await dx.pairs_for(c, chain, [addr])).get(addr)
+                    except Exception as exc:
+                        # A fetch failure is not a dead token - skip it, never raise a false alarm.
+                        log.warning("[guardian] %s price lookup failed, skipping this run: %s", h.symbol or chain, exc)
+                        continue
                     if not pair:
                         await self.check(h, None, {"dead": True, "why": "no trading pair found"})
                         continue

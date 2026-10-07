@@ -114,7 +114,11 @@ class TokenScoutAgent:
                 fresh = [a for a in addrs if not r.exists(f"scout:seen:{coin_key(ch, a)}")]
                 if not fresh:
                     continue
-                pairs = dx.best_pairs(ch, await dx.pairs_for(c, ch, fresh))
+                try:
+                    pairs = dx.best_pairs(ch, await dx.pairs_for(c, ch, fresh))
+                except Exception as exc:
+                    log.warning("[scout] DexScreener %s failed, skipping this chain: %s", ch, exc)
+                    continue
                 for addr, pair in pairs.items():
                     ok, _ = prefilter(dx.basics(pair), R)
                     r.set(f"scout:seen:{coin_key(ch, addr)}", 1, ex=int(recheck.total_seconds()))
